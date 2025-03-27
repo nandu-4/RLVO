@@ -1,6 +1,6 @@
 <p align="center">
   <a href="">
-    <img src='assets/logo.png' alt='ICLR2025_REALLOD_LOGO' width='250px'/><br/>
+    <img src='assets/logo.svg' alt='ICLR2025_REALLOD_LOGO' width="250px"/><br/>
   </a>
 </p>
 
@@ -8,24 +8,20 @@
 
 <div align="center">
 
-📄 [**Table of Contents**](#-table-of-contents) | 🛠️ [**Install**](#️-dependencies-and-installation-) | 📜 [**License**](#-license-) | ❓ [**FAQ**]()
+📄 [**Table of Contents**](#-table-of-contents) | 🛠️ [**Install**](#️-dependencies-and-installation-) | 📖 [**Citation**](#-citation-) | 📜 [**License**](#-license-) | ❓ [**FAQ**]()
 
 </div>
 
 <span style="font-size: 18px;"><b>Note:</b> This repository is also a <span style="color: orange;"><a href="https://github.com/open-mmlab/mmdetection">MMDetection</a> style</span> codebase for Languaged-based Object Detection! Please feel free to use it for your own projects! If this repo helps you, please consider giving us a :star2:! </span>
 
-
-
 <b>TL; DR:</b>  An agentic workflow including planning, tool use, and reflection steps to improve the alignment quality of language expressions and visual objects for LOD model.
 
 This repository contains the official implementation of the following paper:
 
-> **Re-Aligning Language to Visual Objects with an Agentic Workflow**
-> [Yuming Chen](http://www.fishworld.site/), [Jiangyan Feng]()<sup>\*</sup>, [Haodong Zhang]()<sup>\*</sup>, [Lijun Gong](), [Feng Zhu](), [Rui Zhao](), [Qibin Hou](https://houqb.github.io/)<sup>\#</sup>, [Ming-Ming Cheng](https://mmcheng.net), [Yibing Song]()<sup>\#</sup>
-> (\* denotes equal contribution. \# denotes the corresponding author.)
-> ICLR 2025 Conference
-
-
+> **Re-Aligning Language to Visual Objects with an Agentic Workflow** </br>
+> [Yuming Chen](http://www.fishworld.site/), [Jiangyan Feng](https://github.com/jyFengGoGo)<sup>\*</sup>, [Haodong Zhang](https://openreview.net/profile?id=~Haodong_Zhang2)<sup>\*</sup>, [Lijun Gong](https://scholar.google.com.hk/citations?user=CvmpmS0AAAAJ&hl=en), [Feng Zhu](https://zhufengx.github.io/), [Rui Zhao](https://zhaorui.xyz/), [Qibin Hou](https://houqb.github.io/)<sup>\#</sup>, [Ming-Ming Cheng](https://mmcheng.net), [Yibing Song](https://ybsong00.github.io/)<sup>\#</sup> </br>
+> (\* denotes equal contribution. \# denotes the corresponding author.) </br>
+> ICLR 2025 Conference </br>
 
 
 ## 📄 Table of Contents
@@ -45,23 +41,72 @@ This repository contains the official implementation of the following paper:
 ## ✨ News [🔝](#-table-of-contents)
 
 - **Apr, 2025**: Our code is publicly available!
-- **Jan, 2025**: 🔥 Our paper is accepted by ICLR 20254!
+- **Jan, 2025**: 🔥 Our paper is accepted by ICLR 2025!
 
 ## 🛠️ Dependencies and Installation [🔝](#-table-of-contents)
+
+> We provide a simple scrpit `install.sh` for installation, or refer to [install.md](docs/install.md) for more details.
+
+1. Clone and enter the repo.
+
+   ```shell
+   git@github.com:FishAndWasabi/Real-LOD.git
+   cd Real-LOD
+   ```
+
+2. Run `install.sh`.
+
+   ```shell
+   bash install.sh
+   ```
+
+3. Activate your environment!
+
+   ```shell
+   conda activate Real-LOD
+   ```
 
 
 ## 🤖 Real-Agent [🔝](#-table-of-contents)
 
+### Finetuning
 
+### Workflow
 
+### Examples
+
+<p align="center">
+  <a href="">
+    <img src='assets/real-lod_examples.png' alt='ICLR2025_REALMODEL_EXAMPLES'/><br/>
+  </a>
+</p>
 
 ## 🏡 Real-Data [🔝](#-table-of-contents)
 
+The annotations of our InDET dataset are in refcoco format and you can download from Google Drive or Baidu Pan. The images in our InDET dataset contains images from RefCOCO/g/+ (RefCOCO/g/+ images come from MSCOCO), Flicker30K entities, and Objects365 v2 (we sample 6000 images). Please follow their instructions to download the images and put them under a base data directory in the following structure.
 
+```bash
+├── refcoco
+│   ├── refcoco+
+│   │   ├── train2014
+```
 
 
 ## 👼 Real-Model [🔝](#-table-of-contents)
 
+### Train
+
+### Evaluation
+
+### Inference
+
+### Examples
+
+<p align="center">
+  <a href="">
+    <img src='assets/real-model_examples.png' alt='ICLR2025_REALMODEL_EXAMPLES'/><br/>
+  </a>
+</p>
 
 ## 📖 Citation [🔝](#-table-of-contents)
 
@@ -114,9 +159,11 @@ For commercial licensing, please contact `cmm[AT]nankai.edu.cn`.
 
 ## 🤝 Acknowledgement [🔝](#-table-of-contents)
 
-This repository borrows heavily from [mmdetection](https://github.com/open-mmlab/mmdetection), [peft](https://github.com/huggingface/peft), [transformers](https://github.com/huggingface/transformers),and [chatglm](https://github.com/THUDM/ChatGLM-6B).
+This repository borrows heavily from [mmdetection](https://github.com/open-mmlab/mmdetection), [grounding-dino](https://github.com/IDEA-Research/GroundingDINO), [peft](https://github.com/huggingface/peft), [transformers](https://github.com/huggingface/transformers),and [chatglm](https://github.com/THUDM/ChatGLM-6B).
 
-The README file is referred to [LED](https://github.com/Srameo/LED) and [CrossKD](https://github.com/jbwang1997/CrossKD)
+For images from COCO, Objects365 and OpenImage, please see and follow their terms of use: [MSCOCO](https://cocodataset.org/#download)), [Objects365 v2](https://www.objects365.org/overview.html), and [OpenImage](https://storage.googleapis.com/openimages/web/index.html).
+
+The README file is referred to [LED](https://github.com/Srameo/LED) and [LE3D](https://github.com/Srameo/LE3D/blob/main/README.md?plain=1).
 
 We also thank all of our contributors.
 
