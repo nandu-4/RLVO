@@ -16,7 +16,7 @@
 
 </div>
 
-<span style="font-size: 18px;"><b>Key Point:</b> An example that using agent to establish flywheel to provide high-value data assets for every AI industries sustainably. If this repo helps you, please consider giving us a :star2:! </span>
+<span style="font-size: 18px;"><b>Key Point:</b> Rather than becoming assistants to enhance human productivity, agents hold a deeper value paradigm that they can establish workflows that serve as a <b>flywheel</b>, sustaining <b>high-value data assets</b> across AI industries. Our paper is an application in multimodal domains to demonstrate this potential. If this repo helps you, please consider giving us a :star2:! </span>
 
 <b>Note:</b> This repository is also a <span style="color: orange;"><a href="https://github.com/open-mmlab/mmdetection">MMDetection</a> style</span> codebase for Languaged-based Object Detection! Please feel free to use it for your own projects! 
 
