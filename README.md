@@ -4,17 +4,23 @@
   </a>
 </p>
 
-<h2> <p align=center> [ICLR2025] Re-Aligning Language to Visual Objects with an Agentic Workflow </p> </h2>
+<h2> 
+  <p align=center> 
+    [ICLR2025] Re-Aligning Language to Visual Objects with an Agentic Workflow 
+  </p> 
+</h2>
 
 <div align="center">
 
-📄 [**Table of Contents**](#-table-of-contents) | 🛠️ [**Install**](#️-dependencies-and-installation-) | 📖 [**Citation**](#-citation-) | 📜 [**License**](#-license-) | ❓ [**FAQ**]()
+📄 [**Table of Contents**](#-table-of-contents) | ✨ [**Home Page**](https://iclr.cc/virtual/2025/poster/29934) | 📚 [**Paper**](https://arxiv.org/abs/2503.23508)  | 📺 [**Video**](https://recorder-v3.slideslive.com/#/?token=ICLR2025__29934__yuming-chen-jiangyan-feng-ha)  | 🛠️ [**Install**](#️-dependencies-and-installation-) | 📖 [**Citation**](#-citation-) | 📜 [**License**](#-license-) | ❓ [**FAQ**](https://github.com/FishAndWasabi/Real-LODissues?q=label%3AFAQ+)
 
 </div>
 
-<span style="font-size: 18px;"><b>Note:</b> This repository is also a <span style="color: orange;"><a href="https://github.com/open-mmlab/mmdetection">MMDetection</a> style</span> codebase for Languaged-based Object Detection! Please feel free to use it for your own projects! If this repo helps you, please consider giving us a :star2:! </span>
+<span style="font-size: 18px;"><b>Key Point:</b> An example that using agent to establish flywheel to provide high-value data assets for every AI industries sustainably. If this repo helps you, please consider giving us a :star2:! </span>
 
-<b>TL; DR:</b>  An agentic workflow including planning, tool use, and reflection steps to improve the alignment quality of language expressions and visual objects for LOD model.
+<b>Note:</b> This repository is also a <span style="color: orange;"><a href="https://github.com/open-mmlab/mmdetection">MMDetection</a> style</span> codebase for Languaged-based Object Detection! Please feel free to use it for your own projects! 
+
+<b>TL; DR:</b> An agentic workflow including planning, tool use, and reflection steps to improve the alignment quality of language expressions and visual objects for LOD model.
 
 This repository contains the official implementation of the following paper:
 
@@ -39,6 +45,8 @@ This repository contains the official implementation of the following paper:
 
 
 ## ✨ News [🔝](#-table-of-contents)
+
+> Future work can be found in [todo.md](docs/todo.md).
 
 - **Apr, 2025**: Our code is publicly available!
 - **Jan, 2025**: 🔥 Our paper is accepted by ICLR 2025!
@@ -71,7 +79,11 @@ This repository contains the official implementation of the following paper:
 
 ### Finetuning
 
+Coming soon!
+
 ### Workflow
+
+Coming soon!
 
 ### Examples
 
@@ -83,22 +95,21 @@ This repository contains the official implementation of the following paper:
 
 ## 🏡 Real-Data [🔝](#-table-of-contents)
 
-The annotations of our InDET dataset are in refcoco format and you can download from Google Drive or Baidu Pan. The images in our InDET dataset contains images from RefCOCO/g/+ (RefCOCO/g/+ images come from MSCOCO), Flicker30K entities, and Objects365 v2 (we sample 6000 images). Please follow their instructions to download the images and put them under a base data directory in the following structure.
-
-```bash
-├── refcoco
-│   ├── refcoco+
-│   │   ├── train2014
-```
-
+Coming soon!
 
 ## 👼 Real-Model [🔝](#-table-of-contents)
 
 ### Train
 
+Coming soon!
+
 ### Evaluation
 
+Coming soon!
+
 ### Inference
+
+Coming soon!
 
 ### Examples
 
