@@ -172,7 +172,7 @@ For commercial licensing, please contact `cmm[AT]nankai.edu.cn`.
 
 This repository borrows heavily from [mmdetection](https://github.com/open-mmlab/mmdetection), [grounding-dino](https://github.com/IDEA-Research/GroundingDINO), [peft](https://github.com/huggingface/peft), [transformers](https://github.com/huggingface/transformers),and [chatglm](https://github.com/THUDM/ChatGLM-6B).
 
-For images from COCO, Objects365 and OpenImage, please see and follow their terms of use: [MSCOCO](https://cocodataset.org/#download)), [Objects365 v2](https://www.objects365.org/overview.html), and [OpenImage](https://storage.googleapis.com/openimages/web/index.html).
+For images from COCO, Objects365 and OpenImage, please see and follow their terms of use: [MSCOCO](https://cocodataset.org/#download), [Objects365 v2](https://www.objects365.org/overview.html), and [OpenImage](https://storage.googleapis.com/openimages/web/index.html).
 
 The README file is referred to [LED](https://github.com/Srameo/LED) and [LE3D](https://github.com/Srameo/LE3D/blob/main/README.md?plain=1).
 
