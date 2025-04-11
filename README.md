@@ -248,6 +248,18 @@ optional arguments:
 
 #### 1.1 Data Preparation
 
+The tree of evaluation data:
+
+```shell
+├── data
+│   ├── d3
+│   ├── OVDEval
+│   ├── omnilabel_val_v0.1.3
+│   └── coco
+│   └── object365
+│   └── openimagesv5
+```
+
 To obtain the evaluation datasets, please refer to the following tools and URLs:
 
 - **OmniLabel**: https://www.omnilabel.org/dataset/download
