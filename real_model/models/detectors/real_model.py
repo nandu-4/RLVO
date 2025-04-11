@@ -1,17 +1,12 @@
 # Refer to MMDetection
 # Copyright (c) VCIP-NKU. All rights reserved.
 
-# Import the copy module for deep copying objects
 import copy
-# Import the warnings module to handle warnings
 import warnings
 
-# Import the MODELS registry from mmdet
 from mmdet.registry import MODELS
-# Import the GroundingDINO detector class from mmdet
 from mmdet.models.detectors import GroundingDINO
 
-# Register the RealModel class in the MODELS registry
 @MODELS.register_module()
 class RealModel(GroundingDINO):
     """
