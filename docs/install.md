@@ -5,9 +5,9 @@ Installation is tested and working on the following platforms:
 - Ubuntu 20.04.1
   - GPUs: RTX-3090 (Driver Version: 530.30.02)
   - RAM: 64GB
-- CUDA==11.3
-- pytorch==1.12.1
-- torchvision=0.13.1
+- CUDA=11.8
+- pytorch=2.0.1
+- torchvision=0.15.2
 
 
 ## Prerequisites for Real-Model
