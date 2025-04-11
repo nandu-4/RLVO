@@ -77,13 +77,14 @@ This repository contains the official implementation of the following paper:
 
 ## 🤖 Real-Agent [🔝](#-table-of-contents)
 
-### Finetuning
-
-Coming soon!
-
 ### Workflow
 
 Coming soon!
+
+
+<!-- ### Finetuning -->
+
+<!-- Coming soon! -->
 
 ### Examples
 
@@ -95,21 +96,223 @@ Coming soon!
 
 ## 🏡 Real-Data [🔝](#-table-of-contents)
 
-Coming soon!
+### Data Information
+
+The dataset is hosted on [Hugging Face](https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data). Below is the detailed information and corresponding data paths:
+
+| Data Source | Scale | Img Num | Ins Num | Expr Num  | FileName                        |
+| ----------- | ----- | ------- | ------- | --------  | ------------------------------- |
+| Object365   | Small | 8513    | 64528   | 1974504   | real-data-o365-small.jsonl      |
+| Object365   | Base  | 68104   | 416537  | 13628900  | real-data-o365-base.jsonl       |
+| Object365   | Large | 574883  | 3390718 | 112061648 | real-data-o365-large.jsonl      |
+| OpenImage   | Small | 19888   | 36069   | 1069254   | real-data-openimage-small.jsonl |
+| OpenImage   | Base  | 24663   | 48783   | 1435416   | real-data-openimage-base.jsonl  |  
+| OpenImage   | Large | 828314  | 1776100 | 81420000  | real-data-openimage-large.jsonl |  
+| LVIS        | -     | 94171   | 99815   | 3078400   | real-data-lvis.jsonl            |
+
+You can access the dataset using the following commands:
+
+```shell
+# Ensure git-lfs is installed (https://git-lfs.com)
+git lfs install
+
+# Use an access token with write permissions when prompted for a password.
+# Generate a token here: https://huggingface.co/settings/tokens
+git clone https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data
+cd Real-LOD-Data/real-data
+```
+**Note**: The annotation files are provided, and the images remain sourced from their original datasets.
+
+### Data Format
+
+The dataset is structured in the following format:
+
+```json
+{
+  "filename": "path/to/image",
+  "height": <image_height>,
+  "width": <image_width>,
+  "pairs": {
+    <source_model>: {
+      "bboxes": [
+        [<x1>, <y1>, <x2>, <y2>],
+        ...
+      ],
+      "category": <object_category>,
+      "relation": <single/multi>,
+      "positive_expressions": [
+        <positive_expression_1>,
+        <positive_expression_2>,
+        ...
+      ],
+      "negative_expressions": [
+        <negative_expression_1>,
+        <negative_expression_2>,
+        ...
+      ]
+    },
+    ...
+  }
+}
+```
+
+- `filename`: Path to the image file.
+- `height` and `width`: The height and width of the image.
+- `pairs`: Object/expression pairs in the image:
+  - `<source_model>`: The source model used to generate expressions (e.g., `vlm_short`, `vlm_long`, or `llm`).
+  - `bboxes`: A list of bounding boxes, each defined by `[x1, y1, x2, y2]`.
+  - `category`: The category of the object within the bounding box.
+  - `relation`: Specifies whether the object is associated with a single or multiple expressions.
+  - `positive_expressions`: A list of expressions that positively describe the object.
+  - `negative_expressions`: A list of expressions that do not describe the object.
+
+
 
 ## 👼 Real-Model [🔝](#-table-of-contents)
 
 ### Train
 
-Coming soon!
+#### 1.1 Data Preparation
+
+The tree of training data:
+
+```shell
+├── data
+│   ├── real-data
+│   │   ├── real-data-o365-small.jsonl
+│   │   ├── real-data-o365-base.jsonl
+│   │   ├── real-data-o365-large.jsonl
+│   │   ├── real-data-openimage-small.jsonl
+│   │   ├── real-data-openimage-base.jsonl
+│   │   ├── real-data-openimage-large.jsonl
+│   │   └── real-data-lvis.jsonl
+│   └── object365
+│       ├── images
+│       │   ├── train
+│       │   │   ├── xxx.jpg
+│       │   │   ├── ...
+│   └── openimage
+│       ├── train
+│       │   ├── xxx.jpg
+│       │   ├──...
+│   └── coco 
+|       ├── train2017
+│       │   ├── xxx.jpg
+│       │   ├──...
+```
+
+To obtain the images for the datasets mentioned, please refer to the following tools and URLs:
+
+- **Object365**: https://github.com/FrancescoSaverioZuppichini/Object365-download
+- **OpenImage**: https://github.com/cvdfoundation/open-images-dataset
+- **COCO**: http://images.cocodataset.org/zips/train2017.zip
+
+
+#### 1.2 Training with single GPU
+
+```shell
+python tools/train_real_model.py ${CONFIG_FILE} [optional arguments]
+```
+
+####  1.3 Training with multi GPU
+
+```shell
+CUDA_VISIBLE_DEVICES=${GPU_IDs} bash tools/dist_train_real_model.sh ${CONFIG_FILE} ${GPU_NUM} [optional arguments]
+```
+
+You could run `python tools/train_real_model.py --help` to get detailed information of this scripts.
+
+<details>
+<summary> Detailed arguments </summary>
+
+```
+positional arguments:
+config                train config file path
+
+optional arguments:
+-h, --help            show this help message and exit
+--work-dir WORK_DIR   the dir to save logs and models
+--amp                 enable automatic-mixed-precision training
+--resume [RESUME]     If specify checkpoint path, resume from it, while if not specify, try to auto resume from the latest checkpoint in the work directory.
+--cfg-options CFG_OPTIONS [CFG_OPTIONS ...]
+                        override some settings in the used config, the key-value pair in xxx=yyy format will be merged into config file. If the value to be overwritten is a list, it should be like key="[a,b]" or key=a,b It also allows nested
+                        list/tuple values, e.g. key="[(a,b),(c,d)]" Note that the quotation marks are necessary and that no white space is allowed.
+--launcher {none,pytorch,slurm,mpi}
+                        job launcher
+--local_rank LOCAL_RANK
+```
+
+</details>
 
 ### Evaluation
 
-Coming soon!
+#### 1.1 Data Preparation
 
-### Inference
+To obtain the evaluation datasets, please refer to the following tools and URLs:
 
-Coming soon!
+- **OmniLabel**: https://www.omnilabel.org/dataset/download
+- **DOD**: https://github.com/shikras/d-cube?tab=readme-ov-file#download
+- **OVDEval**: https://huggingface.co/datasets/omlab/OVDEval
+
+#### 1.2 Model Checkpoint
+
+We provide the model checkpoint on the [HuggingFace](https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data), you can access them through these code:
+
+```shell
+# Make sure git-lfs is installed (https://git-lfs.com)
+git lfs install
+
+# When prompted for a password, use an access token with write permissions.
+# Generate one from your settings: https://huggingface.co/settings/tokens
+git clone https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data
+cd real-model-ckpts
+```
+
+
+#### 1.3 Evaluation with single GPU
+
+```shell
+python tools/dist_test_real_model.py ${CONFIG_FILE} ${CHECKPOINT_FILE} [optional arguments]
+```
+
+#### 1.4 Evaluation with multi GPU
+
+```shell
+CUDA_VISIBLE_DEVICES=${GPU_IDs} bash tools/dist_dist_test_real_model.sh ${CONFIG_FILE} ${CHECKPOINT_FILE} ${GPU_NUM} [optional arguments]
+```
+
+You could run `python tools/dist_test_real_model.py --help` to get detailed information of this scripts.
+
+<details>
+<summary> Detailed arguments </summary>
+
+```
+positional arguments:
+config                test config file path
+checkpoint            checkpoint file
+
+optional arguments:
+-h, --help            show this help message and exit
+--work-dir WORK_DIR   the directory to save the file containing evaluation metrics
+--out OUT             output result file (must be a .pkl file) in pickle format
+--json-prefix JSON_PREFIX
+                        the prefix of the output json file without perform evaluation, which is useful when you want to format the result to a specific format and submit it to the test server
+--tta                 Whether to use test time augmentation
+--show                show prediction results
+--deploy              Switch model to deployment mode
+--show-dir SHOW_DIR   directory where painted images will be saved. If specified, it will be automatically saved to the work_dir/timestamp/show_dir
+--wait-time WAIT_TIME
+                        the interval of show (s)
+--cfg-options CFG_OPTIONS [CFG_OPTIONS ...]
+                        override some settings in the used config, the key-value pair in xxx=yyy format will be merged into config file. If the value to be overwritten is a list, it should be like key="[a,b]" or key=a,b It also allows nested
+                        list/tuple values, e.g. key="[(a,b),(c,d)]" Note that the quotation marks are necessary and that no white space is allowed.
+--launcher {none,pytorch,slurm,mpi}
+                        job launcher
+--local_rank LOCAL_RANK
+```
+
+</details>
+
 
 ### Examples
 
@@ -178,6 +381,8 @@ The README file is referred to [LED](https://github.com/Srameo/LED) and [LE3D](h
 
 We also thank all of our contributors.
 
+<div align="center">
 <a href="https://github.com/FishAndWasabi/RealLOD/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=FishAndWasabi/RealLOD" />
 </a>
+</div>

@@ -12,12 +12,12 @@
   <tr>
     <td>Real-Model</td>
     <th>Release the checkpoint/configs on Real-Model.</th>
-    <th>Checking</th>
+    <th>✅</th>
   </tr>
   <tr>
     <td>Real-Data</td>
     <th>Release the download url of Real-Data.</th>
-    <th>Checking</th>
+    <th>✅</th>
   </tr>
   <tr>
     <td>Real-Agent</td>
@@ -27,6 +27,15 @@
   <tr>
     <td>Real-LOD</td>
     <th>Release the whole pipeline of Real-LOD.</th>
+    <th>In Processing</th>
+  </tr>
+  <tr>
+  <td>Real-Model Demo</td>
+    <th>Release the demo of Real-Model.</th>
+    <th>In Processing</th>
+  </tr>
+  <td>Real-LOD Demo</td>
+    <th>Release the demo of Real-LOD.</th>
     <th>In Processing</th>
   </tr>
 </tbody>
