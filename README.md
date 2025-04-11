@@ -265,7 +265,7 @@ git lfs install
 # When prompted for a password, use an access token with write permissions.
 # Generate one from your settings: https://huggingface.co/settings/tokens
 git clone https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data
-cd real-model-ckpts
+cd Real-LOD-Data/real-model-ckpts
 ```
 
 
