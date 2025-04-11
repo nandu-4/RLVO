@@ -31,7 +31,7 @@ def parse_args():
     Returns:
         argparse.Namespace: An object containing the parsed command-line arguments.
     """
-    parser = argparse.ArgumentParser(description='MMDet test (and eval) a model')
+    parser = argparse.ArgumentParser(description='Real-Model test (and eval) a model')
     parser.add_argument('config', help='test config file path')
     parser.add_argument('checkpoint', help='checkpoint file')
     parser.add_argument(

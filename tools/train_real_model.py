@@ -25,7 +25,7 @@ def parse_args():
         argparse.Namespace: An object containing the parsed command-line arguments.
     """
     # Create an ArgumentParser object to handle command-line arguments
-    parser = argparse.ArgumentParser(description='Train a detector')
+    parser = argparse.ArgumentParser(description='Real-Model train a detector')
     # Add a positional argument for the training config file path
     parser.add_argument('config', help='train config file path')
     # Add an optional argument for the work directory

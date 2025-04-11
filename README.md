@@ -48,7 +48,8 @@ This repository contains the official implementation of the following paper:
 
 > Future work can be found in [todo.md](docs/todo.md).
 
-- **Apr, 2025**: Our code is publicly available!
+- **Apr, 2025**: The 🏡 **Real-Data** is publicly available!
+- **Apr, 2025**: The code of 👼 **Real-Model** is publicly available!
 - **Jan, 2025**: 🔥 Our paper is accepted by ICLR 2025!
 
 ## 🛠️ Dependencies and Installation [🔝](#-table-of-contents)
@@ -113,14 +114,15 @@ The dataset is hosted on [Hugging Face](https://huggingface.co/datasets/fishandw
 You can access the dataset using the following commands:
 
 ```shell
-# Ensure git-lfs is installed (https://git-lfs.com)
+# Make sure git-lfs is installed (https://git-lfs.com)
 git lfs install
 
-# Use an access token with write permissions when prompted for a password.
-# Generate a token here: https://huggingface.co/settings/tokens
+# When prompted for a password, use an access token with write permissions.
+# Generate one from your settings: https://huggingface.co/settings/tokens
 git clone https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data
 cd Real-LOD-Data/real-data
 ```
+
 **Note**: The annotation files are provided, and the images remain sourced from their original datasets.
 
 ### Data Format
@@ -227,19 +229,20 @@ You could run `python tools/train_real_model.py --help` to get detailed informat
 
 ```
 positional arguments:
-config                train config file path
+  config                train config file path
 
 optional arguments:
--h, --help            show this help message and exit
---work-dir WORK_DIR   the dir to save logs and models
---amp                 enable automatic-mixed-precision training
---resume [RESUME]     If specify checkpoint path, resume from it, while if not specify, try to auto resume from the latest checkpoint in the work directory.
---cfg-options CFG_OPTIONS [CFG_OPTIONS ...]
-                        override some settings in the used config, the key-value pair in xxx=yyy format will be merged into config file. If the value to be overwritten is a list, it should be like key="[a,b]" or key=a,b It also allows nested
-                        list/tuple values, e.g. key="[(a,b),(c,d)]" Note that the quotation marks are necessary and that no white space is allowed.
---launcher {none,pytorch,slurm,mpi}
+  -h, --help            show this help message and exit
+  --work-dir WORK_DIR   the dir to save logs and models
+  --amp                 enable automatic-mixed-precision training
+  --auto-scale-lr       enable automatically scaling LR.
+  --resume [RESUME]     If specify checkpoint path, resume from it, while if not specify, try to auto resume from the latest checkpoint in the work directory.
+  --cfg-options CFG_OPTIONS [CFG_OPTIONS ...]
+                        override some settings in the used config, the key-value pair in xxx=yyy format will be merged into config file. If the value to be overwritten is a list, it should be like
+                        key="[a,b]" or key=a,b It also allows nested list/tuple values, e.g. key="[(a,b),(c,d)]" Note that the quotation marks are necessary and that no white space is allowed.
+  --launcher {none,pytorch,slurm,mpi}
                         job launcher
---local_rank LOCAL_RANK
+  --local_rank LOCAL_RANK, --local-rank LOCAL_RANK
 ```
 
 </details>
@@ -268,7 +271,7 @@ To obtain the evaluation datasets, please refer to the following tools and URLs:
 
 #### 1.2 Model Checkpoint
 
-We provide the model checkpoint on the [HuggingFace](https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data), you can access them through these code:
+We provide the model checkpoint [Real-Model_base](https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data/blob/main/real-model-ckpts/real-model_b-357a96d2.pth) and [Real-Model_tiny](https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data/blob/main/real-model-ckpts/real-model_t-d5faf209.pth) on the [HuggingFace](https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data), you can access them through these code:
 
 ```shell
 # Make sure git-lfs is installed (https://git-lfs.com)
@@ -279,7 +282,6 @@ git lfs install
 git clone https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data
 cd Real-LOD-Data/real-model-ckpts
 ```
-
 
 #### 1.3 Evaluation with single GPU
 
@@ -300,27 +302,24 @@ You could run `python tools/dist_test_real_model.py --help` to get detailed info
 
 ```
 positional arguments:
-config                test config file path
-checkpoint            checkpoint file
+  config                test config file path
+  checkpoint            checkpoint file
 
 optional arguments:
--h, --help            show this help message and exit
---work-dir WORK_DIR   the directory to save the file containing evaluation metrics
---out OUT             output result file (must be a .pkl file) in pickle format
---json-prefix JSON_PREFIX
-                        the prefix of the output json file without perform evaluation, which is useful when you want to format the result to a specific format and submit it to the test server
---tta                 Whether to use test time augmentation
---show                show prediction results
---deploy              Switch model to deployment mode
---show-dir SHOW_DIR   directory where painted images will be saved. If specified, it will be automatically saved to the work_dir/timestamp/show_dir
---wait-time WAIT_TIME
+  -h, --help            show this help message and exit
+  --work-dir WORK_DIR   the directory to save the file containing evaluation metrics
+  --out OUT             dump predictions to a pickle file for offline evaluation
+  --show                show prediction results
+  --show-dir SHOW_DIR   directory where painted images will be saved. If specified, it will be automatically saved to the work_dir/timestamp/show_dir
+  --wait-time WAIT_TIME
                         the interval of show (s)
---cfg-options CFG_OPTIONS [CFG_OPTIONS ...]
-                        override some settings in the used config, the key-value pair in xxx=yyy format will be merged into config file. If the value to be overwritten is a list, it should be like key="[a,b]" or key=a,b It also allows nested
-                        list/tuple values, e.g. key="[(a,b),(c,d)]" Note that the quotation marks are necessary and that no white space is allowed.
---launcher {none,pytorch,slurm,mpi}
+  --cfg-options CFG_OPTIONS [CFG_OPTIONS ...]
+                        override some settings in the used config, the key-value pair in xxx=yyy format will be merged into config file. If the value to be overwritten is a list, it should be like
+                        key="[a,b]" or key=a,b It also allows nested list/tuple values, e.g. key="[(a,b),(c,d)]" Note that the quotation marks are necessary and that no white space is allowed.
+  --launcher {none,pytorch,slurm,mpi}
                         job launcher
---local_rank LOCAL_RANK
+  --tta
+  --local_rank LOCAL_RANK, --local-rank LOCAL_RANK
 ```
 
 </details>
