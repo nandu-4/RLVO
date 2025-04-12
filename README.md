@@ -99,19 +99,20 @@ Coming soon!
 
 ### Data Information
 
-The dataset is hosted on [Hugging Face](https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data). Below is the detailed information and corresponding data paths:
+The dataset is uploaded on [Hugging Face](https://huggingface.co/datasets/fishandwasabi/Real-LOD-Data) and Baidu Yun. Below is the detailed information and corresponding data paths:
 
-| Data Source | Scale | Img Num | Ins Num | Expr Num  | FileName                        |
-| ----------- | ----- | ------- | ------- | --------  | ------------------------------- |
-| Object365   | Small | 8513    | 64528   | 1974504   | real-data-o365-small.jsonl      |
-| Object365   | Base  | 68104   | 416537  | 13628900  | real-data-o365-base.jsonl       |
-| Object365   | Large | 574883  | 3390718 | 112061648 | real-data-o365-large.jsonl      |
-| OpenImage   | Small | 19888   | 36069   | 1069254   | real-data-openimage-small.jsonl |
-| OpenImage   | Base  | 24663   | 48783   | 1435416   | real-data-openimage-base.jsonl  |  
-| OpenImage   | Large | 828314  | 1776100 | 81420000  | real-data-openimage-large.jsonl |  
-| LVIS        | -     | 94171   | 99815   | 3078400   | real-data-lvis.jsonl            |
+| **Src**       | **Scale** | **Img Num** | **Ins Num** | **Exp Num**  | **File**                          | **Baidu Yun**                                                                 |
+|---------------|-----------|-------------|-------------|--------------|-----------------------------------|-------------------------------------------------------------------------------|
+| O365          | Small     | 8,513       | 64,528      | 1,974,504    | `real-data-o365-small.jsonl`      | [Link](https://pan.baidu.com/s/1ow5YaAM-YpvMCb4q9WM9QA?pwd=uubj)              |
+| O365          | Base      | 68,104      | 416,537     | 13,628,900   | `real-data-o365-base.jsonl`       | [Link](https://pan.baidu.com/s/1N3dcFztAsZ77bdZgchwmBw?pwd=e27p)              |
+| O365          | Large     | 574,883     | 3,390,718   | 112,061,648  | `real-data-o365-large.jsonl`      | [Link](https://pan.baidu.com/s/1AByxuSTLHCrqwsaODd0N4w?pwd=a9wr)              |
+| OI            | Small     | 19,888      | 36,069      | 1,069,254    | `real-data-openimage-small.jsonl` | [Link](https://pan.baidu.com/s/1XwbuEYylWFNnOPLbMFCq7A?pwd=pimc)              |
+| OI            | Base      | 24,663      | 48,783      | 1,435,416    | `real-data-openimage-base.jsonl`  | [Link](https://pan.baidu.com/s/1HjsV_J5cxTfOOKiMRiBwKQ?pwd=brpx)              |
+| OI            | Large     | 828,314     | 1,776,100   | 81,420,000   | `real-data-openimage-large.jsonl` | [Link](https://pan.baidu.com/s/1mjRP70aIxLI_rYobDy0BMA?pwd=g34j)              |
+| LVIS          | -         | 94,171      | 99,815      | 3,078,400    | `real-data-lvis.jsonl`            | [Link](https://pan.baidu.com/s/1qTs_SQKHPBj_X6hPkceJ-g?pwd=v52y)              |
 
-You can access the dataset using the following commands:
+
+You can access the dataset through huggingface using the following commands:
 
 ```shell
 # Make sure git-lfs is installed (https://git-lfs.com)
