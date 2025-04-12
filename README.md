@@ -133,24 +133,24 @@ The dataset is structured in the following format:
 ```shell
 {
   "filename": "path/to/image",
-  "height": <image_height>,
-  "width": <image_width>,
+  "height": image_height,
+  "width": image_width,
   "pairs": {
-    <source_model>: {
+    source_model: {
       "bboxes": [
-        [<x1>, <y1>, <x2>, <y2>],
+        [x1, y1, x2, y2],
         ...
       ],
-      "category": <object_category>,
-      "relation": <single/multi>,
+      "category": category,
+      "relation": single/multi,
       "positive_expressions": [
-        <positive_expression_1>,
-        <positive_expression_2>,
+        positive_expression_1,
+        positive_expression_2,
         ...
       ],
       "negative_expressions": [
-        <negative_expression_1>,
-        <negative_expression_2>,
+        negative_expression_1,
+        negative_expression_2,
         ...
       ]
     },
@@ -162,7 +162,7 @@ The dataset is structured in the following format:
 - `filename`: Path to the image file.
 - `height` and `width`: The height and width of the image.
 - `pairs`: Object/expression pairs in the image:
-  - `<source_model>`: The source model used to generate expressions (e.g., `vlm_short`, `vlm_long`, or `llm`).
+  - `source_model`: The source model used to generate expressions (e.g., `vlm_short`, `vlm_long`, or `llm`).
   - `bboxes`: A list of bounding boxes, each defined by `[x1, y1, x2, y2]`.
   - `category`: The category of the object within the bounding box.
   - `relation`: Specifies whether the object is associated with a single or multiple expressions.
