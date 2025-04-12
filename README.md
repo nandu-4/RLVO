@@ -106,9 +106,9 @@ The dataset is uploaded on [Hugging Face](https://huggingface.co/datasets/fishan
 | O365          | Small     | 8,513       | 64,528      | 1,974,504    | `real-data-o365-small.jsonl`      | [Link](https://pan.baidu.com/s/1ow5YaAM-YpvMCb4q9WM9QA?pwd=uubj)              |
 | O365          | Base      | 68,104      | 416,537     | 13,628,900   | `real-data-o365-base.jsonl`       | [Link](https://pan.baidu.com/s/1N3dcFztAsZ77bdZgchwmBw?pwd=e27p)              |
 | O365          | Large     | 574,883     | 3,390,718   | 112,061,648  | `real-data-o365-large.jsonl`      | [Link](https://pan.baidu.com/s/1AByxuSTLHCrqwsaODd0N4w?pwd=a9wr)              |
-| OI            | Small     | 19,888      | 36,069      | 1,069,254    | `real-data-openimage-small.jsonl` | [Link](https://pan.baidu.com/s/1XwbuEYylWFNnOPLbMFCq7A?pwd=pimc)              |
-| OI            | Base      | 24,663      | 48,783      | 1,435,416    | `real-data-openimage-base.jsonl`  | [Link](https://pan.baidu.com/s/1HjsV_J5cxTfOOKiMRiBwKQ?pwd=brpx)              |
-| OI            | Large     | 828,314     | 1,776,100   | 81,420,000   | `real-data-openimage-large.jsonl` | [Link](https://pan.baidu.com/s/1mjRP70aIxLI_rYobDy0BMA?pwd=g34j)              |
+| OI           | Small     | 19,888      | 36,069      | 1,069,254    | `real-data-openimage-small.jsonl` | [Link](https://pan.baidu.com/s/1XwbuEYylWFNnOPLbMFCq7A?pwd=pimc)              |
+| OI           | Base      | 24,663      | 48,783      | 1,435,416    | `real-data-openimage-base.jsonl`  | [Link](https://pan.baidu.com/s/1HjsV_J5cxTfOOKiMRiBwKQ?pwd=brpx)              |
+| OI           | Large     | 828,314     | 1,776,100   | 81,420,000   | `real-data-openimage-large.jsonl` | [Link](https://pan.baidu.com/s/1mjRP70aIxLI_rYobDy0BMA?pwd=g34j)              |
 | LVIS          | -         | 94,171      | 99,815      | 3,078,400    | `real-data-lvis.jsonl`            | [Link](https://pan.baidu.com/s/1qTs_SQKHPBj_X6hPkceJ-g?pwd=v52y)              |
 
 
@@ -130,7 +130,7 @@ cd Real-LOD-Data/real-data
 
 The dataset is structured in the following format:
 
-```json
+```shell
 {
   "filename": "path/to/image",
   "height": <image_height>,
