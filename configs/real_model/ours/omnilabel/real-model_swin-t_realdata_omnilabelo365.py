@@ -91,7 +91,7 @@ val_evaluator = dict(
     # Specify the evaluation metric type
     type='OmniLabelMetric',
     # Annotation file for the evaluation
-    ann_file='data/omnilabel_val_v0.1.3/dataset_all_val_v0.1.3_object365_des-only.json',
+    ann_file='data/omnilabel_val_v0.1.3/dataset_all_val_v0.1.3_object365.json',
     # Whether to only format the results without actual evaluation
     format_only=False
 )
