@@ -206,7 +206,7 @@ The tree of training data:
 
 To obtain the images for the datasets mentioned, please refer to the following tools and URLs:
 
-- **Object365**: https://github.com/FrancescoSaverioZuppichini/Object365-download
+- **Object365**: https://pan.baidu.com/s/1QiWm8hCJus3LstZkz6Mzdw?pwd=wmrx
 - **OpenImage**: https://github.com/cvdfoundation/open-images-dataset
 - **COCO**: http://images.cocodataset.org/zips/train2017.zip
 
