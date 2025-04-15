@@ -117,7 +117,6 @@ model = dict(
     test_cfg=dict(
         max_per_img=300,
         chunked_size=1,
-        total_max_per_img=-1
     )
 )
 
