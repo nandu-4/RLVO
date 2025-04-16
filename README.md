@@ -173,6 +173,81 @@ The dataset is structured in the following format:
 
 ## 👼 Real-Model [🔝](#-table-of-contents)
 
+### Demo(#-demo-of-real-model)
+
+#### 1.1 Shell
+
+You could run the following script to start the shell demo:
+
+```shell
+python demo/real-model_image_demo.py ${IMAGE_FILE} ${CONFIG_FILE} ${CHECKPOINT_FILE} --texts {TEXTS} [optional arguments]
+```
+You could run `python demo/real-model_image_demo.py --help` to get detailed information of this scripts.
+
+<details>
+<summary> Detailed arguments </summary>
+
+```
+positional arguments:
+  inputs                Input image file or folder path.
+  model                 Config or checkpoint .pth file or the model name and alias defined in metafile. The model configuration file will try to read from .pth if the
+                        parameter is a .pth weights file.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --weights WEIGHTS     Checkpoint file
+  --out-dir OUT_DIR     Output directory of images or prediction results.
+  --texts TEXTS         text prompt, such as "bench . car .", "$: coco"
+  --device DEVICE       Device used for inference
+  --pred-score-thr PRED_SCORE_THR
+                        bbox score threshold
+  --batch-size BATCH_SIZE
+                        Inference batch size.
+  --show                Display the image in a popup window.
+  --no-save-vis         Do not save detection vis results
+  --no-save-pred        Do not save detection json results
+  --print-result        Whether to print the results.
+  --palette {coco,voc,citys,random,none}
+                        Color palette used for visualization
+```
+
+</details>
+
+
+#### 1.2 Gradio
+
+You could run the following script to start the Gradio demo (The [gradio space](https://huggingface.co/spaces/fishandwasabi/Real-Model) will be release as soon as possible):
+
+```shell
+python demo/real-model_gradio_demo.py ${CONFIG_FILE} ${CHECKPOINT_FILE} [optional arguments]
+```
+
+You could run `python demo/real-model_gradio_demo.py --help` to get detailed information of this scripts.
+
+<details>
+<summary> Detailed arguments </summary>
+
+```
+positional arguments:
+  config                Config file
+  checkpoint            Checkpoint file
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --device DEVICE       Device used for inference
+  --server_name SERVER_NAME
+                        Gradio server name (default: 0.0.0.0)
+  --server_port SERVER_PORT
+                        Gradio server port (default: 7860)
+  --score_thre SCORE_THRE
+                        Score threshold for inference (default: 0.3)
+  --share               Enable sharing the Gradio app (default: False)
+  --debug               Enable debug mode for Gradio (default: False)
+```
+
+</details>
+
+
 ### Train
 
 #### 1.1 Data Preparation

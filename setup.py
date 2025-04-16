@@ -210,7 +210,7 @@ if __name__ == '__main__':
             'Programming Language :: Python :: 3.9',
         ],
         license='Apache License 2.0',
-        install_requires=parse_requirements('requirements/runtime.txt'),
+        install_requires=parse_requirements('requirements/requirements.txt'),
         extras_require={
             },
         ext_modules=[],
