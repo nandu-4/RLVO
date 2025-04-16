@@ -38,6 +38,7 @@ This repository contains the official implementation of the following paper:
 - [🤖 Real-Agent 🔝](#-real-agent-)
 - [🏡 Real-Data 🔝](#-real-data-)
 - [🏗️ Real-Model 🔝](#️-real-model-)
+  - [Demo of Real-Model](#-demo-of-real-model)
 - [📖 Citation 🔝](#-citation-)
 - [📜 License 🔝](#-license-)
 - [📮 Contact 🔝](#-contact-)
@@ -171,9 +172,9 @@ The dataset is structured in the following format:
 
 
 
-## 👼 Real-Model [🔝](#-table-of-contents)
+## 🏗️ Real-Model [🔝](#-table-of-contents)
 
-### Demo(#-demo-of-real-model)
+### Demo of Real-Model
 
 #### 1.1 Shell
 
