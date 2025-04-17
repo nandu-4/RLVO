@@ -1,18 +1,24 @@
-<p align="center">
+<div align="center">
   <a href="">
     <img src='assets/logo.svg' alt='ICLR2025_REALLOD_LOGO' width="250px"/><br/>
   </a>
-</p>
 
-<h2> 
-  <p align=center> 
-    [ICLR2025] Re-Aligning Language to Visual Objects with an Agentic Workflow 
-  </p> 
-</h2>
+  <h2> 
+      Re-Aligning Language to Visual Objects with an Agentic Workflow </br></br>
+      ICLR2025
+  </h2>
 
-<div align="center">
+  [![arXiv](https://img.shields.io/badge/ArXiv-Prepint-red)](https://arxiv.org/abs/2503.23508)
+  [![Project Page](https://img.shields.io/badge/Project-Page-brightgreen)](http://www.fishworld.site/projects/reallod/)
+  [![Hugging Face Space](https://img.shields.io/badge/Hugging%20Face-Space-blue)](https://huggingface.co/Real-LOD)
+  [![Hugging Face Dataset](https://img.shields.io/badge/Hugging%20Face-Dataset-8A2BE2)](https://huggingface.co/datasets/Real-LOD/Real-Data)
+  [![Youtube](https://img.shields.io/badge/Video-Youtube-red)](https://youtu.be/HwcMHMIweBw)
+  [![Bilibili](https://img.shields.io/badge/Video-Bilibili-blue)](https://www.bilibili.com/video/BV1bNo3YbE1e/?spm_id_from=333.1387.homepage.video_card.click)
 
-📄 [**Table of Contents**](#-table-of-contents) | ✨ [**Home Page**](http://www.fishworld.site/projects/reallod/) | ✨ [**ICLR Page**](https://iclr.cc/virtual/2025/poster/29934) | 📚 [**Paper**](https://arxiv.org/abs/2503.23508)  | 📺 [**Youtube**](https://youtu.be/HwcMHMIweBw)  | 🛠️ [**Install**](#️-dependencies-and-installation-) | 📖 [**Citation**](#-citation-) | 📜 [**License**](#-license-) | ❓ [**FAQ**](https://github.com/FishAndWasabi/Real-LODissues?q=label%3AFAQ+)
+  [![closed issue](https://img.shields.io/github/issues-closed-raw/FishAndWasabi/Real-LOD)](https://github.com/FishAndWasabi/Real-LOD/issues)
+  [![open issues](https://img.shields.io/github/issues-raw/FishAndWasabi/Real-LOD)](https://github.com/FishAndWasabi/Real-LOD/issues)
+
+  📄 [**Table of Contents**](#-table-of-contents) | ✨ [**ICLR Page**](https://iclr.cc/virtual/2025/poster/29934) | 🛠️ [**Install**](#️-dependencies-and-installation-) | 📖 [**Citation**](#-citation-) | 📜 [**License**](#-license-) | ❓ [**FAQ**](https://github.com/FishAndWasabi/Real-LODissues?q=label%3AFAQ+)
 
 </div>
 

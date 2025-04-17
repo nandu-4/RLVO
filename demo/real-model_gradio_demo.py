@@ -52,22 +52,36 @@ class RealModelDemo:
         with gr.Row():
             with gr.Column():
                 image_input = gr.Image(
-                    label='Image', source='upload', elem_classes='input_image',
-                    type='filepath', interactive=True, tool='editor'
+                    type='filepath', 
+                    sources=["upload", "webcam", "clipboard"], 
+                    label='Image', 
+                    elem_classes='input_image',
+                    interactive=True
                 )
                 text_input = gr.Textbox(
-                    label='Text Prompt', elem_classes='input_text', interactive=True
+                    label='Text Prompt', 
+                    elem_classes='input_text',
+                    interactive=True
                 )
                 score_slider = gr.Slider(
-                    minimum=0.0, maximum=1.0, value=self.score_thre, step=0.01,
-                    label='Score Threshold', interactive=True
+                    minimum=0.0, 
+                    maximum=1.0, 
+                    value=self.score_thre, 
+                    step=0.01,
+                    label='Score Threshold', 
+                    interactive=True
                 )
                 output = gr.Image(
-                    label='Result', source='upload', interactive=False, elem_classes='result'
+                    label='Result', 
+                    interactive=False, 
+                    elem_classes='result'
                 )
-                run_button = gr.Button('Run', elem_classes='run_button')
+                run_button = gr.Button('Run', 
+                                       elem_classes='run_button')
                 run_button.click(
-                    self.inference, inputs=[image_input, text_input, score_slider], outputs=output
+                    self.inference, 
+                    inputs=[image_input, text_input, score_slider],
+                    outputs=output
                 )
 
         with gr.Row():
@@ -75,17 +89,19 @@ class RealModelDemo:
                 components=[image_input, text_input],
                 samples=[
                     ['demo/demo_images/demo.jpg', 'man riding a carriage'],
-                    ['demo/demo_images/006_50930592.jpg', 'woman in wedding dress next to a man in suit'],
-                    ['demo/demo_images/000000060823.jpg', 'cows that are laid down'],
-                    ['demo/demo_images/000000081988.jpg', 'these two people each have a pink surfboard']
+                    ['demo/demo_images/demo3.jpg', 'woman in wedding dress next to a man in suit'],
+                    ['demo/demo_images/demo2.jpg', 'cows that are laid down'],
+                    ['demo/demo_images/demo1.jpg', 'these two people each have a pink surfboard']
                 ]
             )
             example_images.click(
-                fn=self.update, inputs=example_images, outputs=[image_input, text_input]
+                fn=self.update, 
+                inputs=example_images, 
+                outputs=[image_input, text_input]
             )
 
     def update(self, example):
-        return gr.Image.update(value=example[0]), gr.Textbox.update(value=example[1])
+        return example[0], example[1]
 
     def inference(self, image, text, score_thre):
         results_dict = self.inferencer(

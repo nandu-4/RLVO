@@ -32,6 +32,10 @@
   <tr>
   <td>Real-Model Demo</td>
     <th>Release the demo of Real-Model.</th>
+    <th>✅</th>
+  </tr>
+  <td>Real-Model Huggingface Space</td>
+    <th>Release the demo of Real-Model.</th>
     <th>In Processing</th>
   </tr>
   <td>Real-LOD Demo</td>
