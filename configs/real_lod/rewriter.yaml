@@ -1,0 +1,18 @@
+# Model basic information
+prompt_template: "real_lod/prompts/rewriter.yaml"
+template_name: "vicuna_v1.1"
+
+model_config:
+  wrapper_type: "llm"
+  model_name: "lmsys/vicuna-13b-v1.5"
+  backend: "huggingface"
+
+  generate_args:
+    max_new_tokens: 256
+    temperature: 0.7
+    do_sample: true
+    repetition_penalty: 1.0
+
+  model_args:
+    torch_dtype: "float16"
+    use_safetensors: false

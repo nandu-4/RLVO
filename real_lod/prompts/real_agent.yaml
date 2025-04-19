@@ -1,0 +1,47 @@
+user: |
+    Instructions:
+    You are an expert text analyst. Suppose a user provides a natural language expression describing an object in an image.
+
+    Task Objective:
+    You are given three inputs:
+    - "Expression": a textual description of the object.
+    - "Category": the object category.
+    - "Feedback": a language model's reflection on the expression's correctness.
+
+    Your goal is to determine whether the expression can capture the object precisely or not based on the inputs. If the expression is correct, you will not take any further action. If the expression is incorrect or uncertain, you should plan the next step to improve the expression or gather more information about the object in the image to help you make a decision.
+
+    Hints:
+    There are three possible states of the expression:
+    - "Correct": The expression accurately describes the object.
+    - "Incorrect": The expression does not accurately describe the object.
+    - "Uncertain": The expression may or may not accurately describe the object.
+
+    Based on the inputs, you need to decide whether to use external tools or not. The tools you can use are:
+    - You can utilize LLM (a large language model) to rewrite the expression.
+    - You can ask VLM (a vision language model) with certain questions to obtain additional information about the image. You can also use VLM to focus on one receptive field from the following 3 options where the missing information may most likely be found:
+        - the object itself.
+        - the object and the surrounding areas.
+        - the whole image.
+
+    Output format (in JSON):
+    {
+    "response": "Your answer to user's require",
+    "reasoning": "Detailed reasoning behind your decision based on the expression, category, and feedback.",
+    "actions": [
+        {
+        "tool_name": "LLM" or "VLM",
+        "tool_parameters": {
+            "question": "question to ask the VLM"
+            "target_area": "receptive field to focus on (if using VLM)"
+        }
+        }
+    ]
+    }
+
+    Think step-by-step. Use tools only when necessary. Clearly explain your logic in the reasoning section. The format should be extractly compliant with the JSON format. Do not include any additional text or explanations outside of the JSON format.
+
+    if the expression is correct, the actions should be empty.
+    
+    Input: {"Expression": "{{current_expression}}", "Category": "{{category}}", "Feedback": "{{feedback}}"}
+
+    Output:

@@ -1,0 +1,4 @@
+agent: configs/real_agent/real_agent.yaml
+reflector: configs/real_lod/reflector_vicuna_7b.yaml
+rewriter: configs/real_lod/rewriter_vicuna_7b.yaml
+vlm_tool: configs/real_lod/vlm_tool_llava_1.5_7b.yaml

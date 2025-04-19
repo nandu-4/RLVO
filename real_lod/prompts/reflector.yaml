@@ -1,0 +1,64 @@
+user: |
+    ## Task Description
+    You are an excellent text analyst. 
+    I want to get correct descriptions of a target object in an image. Now I already have a expressions describing this target object, but the texts might contain mistakes and I want you to help with this. 
+    I will provide you with this expressions to be checked, along with an `Object Category' and a `Caption' as reference information: 
+    1. Object Category: the exact category name of my target object. 
+    2. Caption: a long text describing content in the image, information provided in this caption is correct. Note that some details in the image might be missing in this caption.
+    Given the reference information, your task is to verify if the expressions correctly describes my target object. 
+
+
+    ## Example 1
+    Object Category: Laptop
+    Caption: In the image, there are two women sitting at a table, both focused on their laptops. One of the women is holding up her middle finger, possibly as a gesture of defiance or humor. On the table, there is a bottle, a cup, and a laptop being used by one of the women. The woman with the laptop is wearing a scarf, and the other woman is positioned on the other side of the table. Drink: A clear plastic bottle of water is on the table. It is placed in front of the woman with the laptop.Laptop: The laptop is a black and silver Dell computer. The woman is using it while sitting at the table.Table: The table is a dining table where the woman is sitting with her laptop and a bottle of water.Bottle: The bottle is a clear plastic bottle of water. It is placed on the table in front of the woman with the laptop.
+    Phrase: 'black and silver Dell computer'
+    Feedback: The expression describes a computer and provides its color and brand. 'Computer' is similar with 'Laptop' and the caption claims the laptop in the image to be a black and silver Dell computer, this expression is correctly describing the target object.
+    Conclusion: The expression is correct.
+
+    ## Example 2
+    Object Category: Coat
+    Caption: The image showcases a person wearing a leather jacket, standing in a dark setting. The person appears to be a woman with long hair, and she is wearing a shirt and tie with the jacket. The main focus of the image is the person, who is standing in the foreground while the background remains relatively dark. The overall scene gives off a sense of style and confidence as the woman confidently wears her leather jacket.
+    Phrase: 'black leather jacket worn by a woman'
+    Feedback: The expression describes a jacket and provides its color, material and relation with person in image. 'Jacket' and 'Coat' are of similar types, the expression is describing the correct object category. The material of the jacket and its relation with the person in image is consistent with the caption. The color of the jacket is not mentioned in the image caption. To determine if the expression accurately describe the coat, you would need additional information about the color of the coat in image.
+    Conclusion: The expression is uncertain. The color of the coat is not mentioned in the caption. 
+
+    ## Example 3
+    Object Category: vase
+    Caption: The image depicts a man sitting comfortably in a chair in a room with several books and various objects around him. The room appears to be a living room or a library-like space, with a bookshelf filled with books and a potted plant adding a touch of greenery. A vase and a flower can be seen nearby, further enhancing the room's ambiance. A desk is also present in the room, along with a window that allows natural light to enter. The man is wearing sneakers, and there are binoculars close to him, possibly for outdoor activities or hobbies. 1. Chair: The chair is black and made of leather. It is situated in the room, with the man sitting on it. The chair provides a comfortable seating area for the man to relax and read books.2. Carpet: The carpet is a rug on the floor, covering the ground in the room. It adds warmth and comfort to the space, creating a cozy atmosphere.3. Potted Plant: The potted plant is placed in the room, adding a touch of greenery and life to the space. It can be seen near the window, allowing it to receive sunlight.4. Flower: The flower is a decorative element, placed in a vase, which is located on a desk. The flower adds a touch of beauty and color to the room, creating a pleasant atmosphere.5. Vase: The vase is made of glass and is used to hold the flower. It is placed on the desk, contributing to the room's decor.6. Lamp: The lamp is situated on a desk, providing light for the room. It can be turned on or off, depending on the needs of the person in the room.7. Cabinet/Shelf: The cabinet or shelf is filled with books, which the man can read and enjoy. It is an essential part of the room, providing storage and easy access to the books.8. Desk: The desk is a workspace in the room, providing a place for the man to sit and read the books. It also has the vase with the flower on it, adding to the room's decor.9. Person: The man is an elderly person, sitting comfortably in the chair and reading books. He is the main subject of the image, enjoying his time in the room.10. Sneakers: The sneakers are located on the floor, near the man sitting in the chair. They indicate that he has recently arrived or is preparing to leave the room.11. Binoculars: The binoculars are placed on the desk, suggesting that the man may also be interested in bird-watching or observing the surroundings.
+    Phrase: 'a black and white decorative vase with a brown handle'
+    Feedback: The expression describes the target category of 'vase'. But the color of the vase and if it the vase has a brown handle is not mentioned in the caption, so extra information is needed to further determine if the expression is correct.
+    Conclusion: The expression is uncertain. The color of the vase and if the vase has a brown handle is not mentioned in the caption.
+
+    ## Example 4
+    Object Category: plate
+    Caption: The plate in the red bounding box is a small, round, white ceramic plate with a red rim. It is placed on a table in the center of the image, surrounded by various food items and people. The plate is likely used for serving or eating food, and it is positioned near the center of the table, which is covered with a variety of dishes and beverages. The plate's red rim contrasts with the white of the plate and the colors of the food and tablecloth, making it stand out. The plate is not in direct contact with any other objects outside the red bounding box, but it is part of the overall scene of a gathering or event where food is being served.
+    Phrase: 'A plate with an apple on it.'
+    Feedback: The expression describes the target category of 'plate' and provides a detail that an apple is on it. But the caption does not mention what the plate is holding, extra information is needed.
+    Conclusion: The expression is uncertain. What is on the plate is not mentioned in the caption.
+
+    ## Example 5
+    Object Category: person
+    Caption: The image features a person lying down, possibly a priest or a man of religious background. The individual is wearing a white cap, which is a distinguishing feature of the scene. The person appears to be sleeping or in a state of rest, with the white cap covering the head. The bed they are lying on is covered with purple fabric, adding a touch of color to the scene. The person's attire and the white cap suggest a connection to religious or spiritual life, making the image a representation of a person of faith or a religious figure.
+    Phrase: 'man with purple hat'
+    Feedback: The expression describes the correct object category of 'person' and provides the person's gender and clothes. But the color of the man's hat is 'white', as the caption mentioned, not 'purple'. So this expression has conflict with the given caption, it is wrong.
+    Conclusion: The expression is wrong.
+
+    ## Example 6
+    Object Category: Dog
+    Caption: The image features a man and a dog staring at each other. The man is wearing glasses and appears to be engaged in a conversation with the dog. The dog is positioned on the right side of the scene, while the man is on the left.In the background, there are two other people who seem to be observing the interaction between the man and the dog. Additionally, there is a car parked in the middle of the scene, and a chair can be seen near the center of the image. A dog with its tongue out, looking at a man wearing glasses. The dog is a German Shepherd, and it seems to be panting while facing the man. The man is wearing a black shirt and glasses, and he appears to be engaged in a conversation with the dog. The setting includes a group of people, a car, and a motorcycle in the background, suggesting an outdoor gathering or event.
+    Phrase: 'man wearing glasses'
+    Feedback: The expression describes a person and provides the person's gender and appearance. Given the target object is 'Dog', this expression does not describe the target category, so this expression is wrong.
+    Conclusion: The expression is wrong.
+
+
+    ## Process Instruction
+    1. Correct expressions: If the expressions describes the target category and provides similar information that can be found in the caption, this expressions is correct. 
+    2. Uncertain expressions: If the expressions describes the target category but provides information that is missing in the caption, this expressions is uncertain. Please tell me what information in this expressions is not mentioned in the given caption. Extra information could be object color, object material, object location in the image, object action, object relation with other objects in the image, etc. 
+    3. Wrong expressions: If the expressions describes a different object category, or the expressions provides information that conflicts with the caption, this expressions is wrong. 
+
+    ## Your task
+    Object Category: '{{category}}'
+    Caption: '{{caption}}'
+    Object Expression: '{{current_expression}}'
+
+    Respond with your 'Feedback' and 'Conclusion'. Be concise.

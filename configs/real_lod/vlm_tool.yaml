@@ -1,0 +1,21 @@
+# Model basic information
+prompt_template: "real_lod/prompts/vlm_tool.yaml"
+
+
+model_config:
+  wrapper_type: "llava"
+  model_name: "llava-hf/llava-v1.6-34b-hf"
+  backend: "huggingface"
+
+  generate_args:
+    max_new_tokens: 2048
+    temperature: 0.7
+    do_sample: true
+    repetition_penalty: 1.0
+    num_beams: 1
+    top_k: null
+    top_p: null
+
+  model_args:
+    torch_dtype: "float16"
+

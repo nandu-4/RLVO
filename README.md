@@ -1,6 +1,6 @@
 <div align="center">
   <a href="">
-    <img src='assets/logo.svg' alt='ICLR2025_REALLOD_LOGO' width="250px"/><br/>
+    <img src='assets/readme/logo.svg' alt='ICLR2025_REALLOD_LOGO' width="250px"/><br/>
   </a>
 
   <h2> 
@@ -41,9 +41,10 @@ This repository contains the official implementation of the following paper:
 - [📄 Table of Contents](#-table-of-contents)
 - [✨ News 🔝](#-news-)
 - [🛠️ Dependencies and Installation 🔝](#️-dependencies-and-installation-)
+- [🚀 Real-LOD 🔝](#-real-agent-)
 - [🤖 Real-Agent 🔝](#-real-agent-)
-- [🏡 Real-Data 🔝](#-real-data-)
-- [🏗️ Real-Model 🔝](#️-real-model-)
+- [📕 Real-Data 🔝](#-real-data-)
+- [🚂 Real-Model 🔝](#️-real-model-)
   - [Demo of Real-Model](#-demo-of-real-model)
 - [📖 Citation 🔝](#-citation-)
 - [📜 License 🔝](#-license-)
@@ -55,8 +56,9 @@ This repository contains the official implementation of the following paper:
 
 > Future work can be found in [todo.md](docs/todo.md).
 
-- **Apr, 2025**: The 🏡 **Real-Data** is publicly available!
-- **Apr, 2025**: The code of 👼 **Real-Model** is publicly available!
+- **Apr, 2025**: The code of 🚀 **Real-LOD** is publicly available!
+- **Apr, 2025**: The 📕 **Real-Data** is publicly available!
+- **Apr, 2025**: The code of 🚂 **Real-Model** is publicly available!
 - **Jan, 2025**: 🔥 Our paper is accepted by ICLR 2025!
 
 ## 🛠️ Dependencies and Installation [🔝](#-table-of-contents)
@@ -83,26 +85,76 @@ This repository contains the official implementation of the following paper:
    ```
 
 
-## 🤖 Real-Agent [🔝](#-table-of-contents)
+## 🚀 Real-LOD [🔝](#-table-of-contents)
 
-### Workflow
+### Data Format
 
-Coming soon!
+The input data format of Real-LOD workflow:
+
+```shell
+{
+  "image_path": "path/to/image",
+  "height": image_height,
+  "width": image_width,
+  "raw_expression": raw_expression,
+  "global_caption": global_caption,
+  "object_locations": {
+      "chosen_object": {"id":0, "category": category_name, "bbox": [x, y, w, h]},
+      "other_objects": [{"id":1, "category": category_name, "bbox": [x, y, w, h]},
+                        {"id":2, "category": category_name, "bbox": [x, y, w, h]}]
+  }
+}
+```
+
+- `image_path`: Path to the image file.
+- `height` and `width`: The height and width of the image.
+- `object_locations`: Object/expression pairs in the image:
+  - `chosen_object`: The source model used to generate expressions (e.g., `vlm_short`, `vlm_long`, or `llm`).
+  - `other_objects`: A list of bounding boxes, each defined by `[x1, y1, x2, y2]`.
 
 
-<!-- ### Finetuning -->
+### Run
 
-<!-- Coming soon! -->
+You could run the following script to start the shell demo:
+
+```shell
+python tools/run_real_lod.py ${ANNOTATION} ${CONFIG_FILE} [optional arguments]
+```
+You could run `python tools/run_real_lod.py --help` to get detailed information of this scripts.
+
+<details>
+<summary> Detailed arguments </summary>
+
+```
+positional arguments:
+  annotation            Path to the input annotation file.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --configs CONFIGS     Path to the configuration file for agent.
+  --max_cycles MAX_CYCLES
+                        Maximum number of cycles for the workflow.
+  --debug               Enable debug mode.
+  --save_dir SAVE_DIR   Directory to save results.
+```
+
+</details>
 
 ### Examples
 
 <p align="center">
   <a href="">
-    <img src='assets/real-lod_examples.png' alt='ICLR2025_REALMODEL_EXAMPLES'/><br/>
+    <img src='assets/readme/real-lod_examples.png' alt='ICLR2025_REALMODEL_EXAMPLES'/><br/>
   </a>
 </p>
 
-## 🏡 Real-Data [🔝](#-table-of-contents)
+
+## 🤖 Real-Agent [🔝](#-table-of-contents)
+
+Comming Soon!
+
+
+## 📕 Real-Data [🔝](#-table-of-contents)
 
 ### Data Information
 
@@ -178,7 +230,7 @@ The dataset is structured in the following format:
 
 
 
-## 🏗️ Real-Model [🔝](#-table-of-contents)
+## 🚂 Real-Model [🔝](#-table-of-contents)
 
 ### Demo of Real-Model
 
@@ -412,7 +464,7 @@ optional arguments:
 
 <p align="center">
   <a href="">
-    <img src='assets/real-model_examples.png' alt='ICLR2025_REALMODEL_EXAMPLES'/><br/>
+    <img src='assets/readme/real-model_examples.png' alt='ICLR2025_REALMODEL_EXAMPLES'/><br/>
   </a>
 </p>
 
