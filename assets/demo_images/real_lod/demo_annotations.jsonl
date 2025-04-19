@@ -1,0 +1,182 @@
+[
+    {
+        "image_path": "assets/demo_images/real_lod/obj365_val_000000190768.jpg",
+        "height": 512,
+        "width": 769,
+        "raw_expression": "'a trumpet'",
+        "object_locations": {
+            "chosen_object": {
+                "id": 0,
+                "category": "trumpet",
+                "bbox": [
+                    473.7913818545,
+                    156.4006347776,
+                    109.62585445129997,
+                    60.6030273536
+                ]
+            },
+            "other_objects": []
+        },
+        "global_caption": "The trumpet in the red bounding box is being played by a musician who is standing in the center of the stage. The trumpet is a brass instrument with a shiny, metallic finish. It is held by the musician with both hands, and the musician's fingers are pressing the valves to produce different notes. The trumpet is pointed towards the audience, indicating that it is being played during a performance. The musician is wearing a hat and a blue shirt, and is surrounded by other band members who are also playing their instruments. The stage is lit with colorful lights, creating a vibrant atmosphere for the performance. The trumpet is the main focus of the red bounding box, and it is located in the center of the image, drawing attention to the musician and the instrument. The trumpet's shiny surface reflects the stage lights, adding to its prominence in the image."
+    },
+    {
+        "image_path": "assets/demo_images/real_lod/obj365_val_000000190768.jpg",
+        "height": 512,
+        "width": 769,
+        "raw_expression": "'the trumpet is shiny'",
+        "object_locations": {
+            "chosen_object": {
+                "id": 0,
+                "category": "trumpet",
+                "bbox": [
+                    473.7913818545,
+                    156.4006347776,
+                    109.62585445129997,
+                    60.6030273536
+                ]
+            },
+            "other_objects": []
+        },
+        "global_caption": "The trumpet in the red bounding box is being played by a musician who is standing in the center of the stage. The trumpet is a brass instrument with a shiny, metallic finish. It is held by the musician with both hands, and the musician's fingers are pressing the valves to produce different notes. The trumpet is pointed towards the audience, indicating that it is being played during a performance. The musician is wearing a hat and a blue shirt, and is surrounded by other band members who are also playing their instruments. The stage is lit with colorful lights, creating a vibrant atmosphere for the performance. The trumpet is the main focus of the red bounding box, and it is located in the center of the image, drawing attention to the musician and the instrument. The trumpet's shiny surface reflects the stage lights, adding to its prominence in the image."
+    },
+    {
+        "image_path": "assets/demo_images/real_lod/obj365_val_000000569935.jpg",
+        "height": 427,
+        "width": 640,
+        "raw_expression": "'A seal in the water.'",
+        "object_locations": {
+            "chosen_object": {
+                "id": 0,
+                "category": "seal",
+                "bbox": [
+                    105.9069824,
+                    105.5966186429,
+                    329.731689472,
+                    266.762084974
+                ]
+            },
+            "other_objects": []
+        },
+        "global_caption": "The seal in the red bounding box is a dark brown color, with a smooth, wet skin. It is located in the center of the image, surrounded by water. The seal appears to be resting or swimming, with its head slightly raised above the water's surface. It is not interacting with any other objects outside the red bounding box, but it is in close proximity to several birds, which are also in the water. The birds are various shades of gray and white, and they are scattered around the seal, some closer and others further away. The water around the seal and the birds is murky, suggesting that it might be shallow or that there is a lot of sediment or algae in the water. The seal's position in the center of the image, along with its size and color, make it the focal point of the image. The birds, while numerous, are smaller and less prominent, serving as a backdrop to the seal."
+    },
+    {
+        "image_path": "assets/demo_images/real_lod/obj365_val_000000540829.jpg",
+        "height": 480,
+        "width": 640,
+        "raw_expression": "'A green plant in a brown pot.'",
+        "object_locations": {
+            "chosen_object": {
+                "id": 0,
+                "category": "potted plant",
+                "bbox": [
+                    82.464904768,
+                    52.973083488,
+                    130.83898924800002,
+                    149.180908224
+                ]
+            },
+            "other_objects": []
+        },
+        "global_caption": "The potted plant in the red bounding box is a lush green plant with a vibrant color. It is located on the left side of the image, near the center. The plant is in a terracotta pot, which contrasts with the green leaves. The plant appears to be healthy and well-maintained. It is positioned in front of a white chair, which is part of a larger arrangement of chairs and tables. The plant adds a touch of natural beauty to the scene and serves as a decorative element. It is not interacting with any other objects in the image, but its presence contributes to the overall aesthetic of the setting.."
+    },
+    {
+        "image_path": "assets/demo_images/real_lod/obj365_val_000000119029.jpg",
+        "height": 512,
+        "width": 766,
+        "raw_expression": "'a green potted plant'",
+        "object_locations": {
+            "chosen_object": {
+                "id": 0,
+                "category": "potted plant",
+                "bbox": [
+                    21.171203602,
+                    260.7215576064,
+                    60.0020752294,
+                    68.50634767360003
+                ]
+            },
+            "other_objects": []
+        },
+        "global_caption": "The potted plant in the red bounding box is a small, green, leafy plant with a white pot. It is located on the left side of the image, near the wall. The plant appears to be healthy and well-maintained. It is not interacting with any other objects outside the red bounding box, but it is part of the overall indoor setting, which includes people and various items such as mannequins, clothing, and other decorative elements. The plant serves as a decorative piece, adding a touch of greenery to the space.."
+    },
+    {
+        "image_path": "assets/demo_images/real_lod/obj365_val_000000229105.jpg",
+        "height": 512,
+        "width": 683,
+        "raw_expression": "'a brown and white cactus'",
+        "object_locations": {
+            "chosen_object": {
+                "id": 0,
+                "category": "potted plant",
+                "bbox": [
+                    115.15789793169999,
+                    287.4960937472,
+                    145.8401489538,
+                    149.7465209856
+                ]
+            },
+            "other_objects": []
+        },
+        "global_caption": "The potted plant in the red bounding box is a tall, slender plant with green leaves. It is placed on a large, round, light-colored table in the center of the image. The plant is surrounded by a decorative bowl that matches the table's color. The table is situated in a spacious room with high ceilings and large windows, allowing natural light to fill the space. The room features modern furniture, including a comfortable-looking sofa and a stylish chair, both of which are positioned to face the plant. The overall atmosphere of the room is elegant and inviting, with the plant serving as a focal point due to its central location and the red bounding box highlighting it.."
+    },
+    {
+        "image_path": "assets/demo_images/real_lod/obj365_val_000000519407.jpg",
+        "height": 683,
+        "width": 512,
+        "raw_expression": "'plants growing in the white pot'",
+        "object_locations": {
+            "chosen_object": {
+                "id": 0,
+                "category": "potted plant",
+                "bbox": [
+                    292.8898925568,
+                    352.7010498083,
+                    127.56646732799999,
+                    80.17016598919997
+                ]
+            },
+            "other_objects": []
+        },
+        "global_caption": "The potted plant in the red bounding box is a small, green, leafy plant with a compact, rounded shape. It is located in the lower right corner of the image, within a white picket fence. The plant is in a red pot, which contrasts with the green of the plant and the white of the fence. The plant appears to be healthy and well-maintained. It is not in direct sunlight, but it is receiving some light from the surrounding environment. The plant is not interacting with any other objects outside the red bounding box, but it is part of a larger garden scene that includes other plants, trees, and a white fence. The plant's primary function is decorative, adding to the aesthetic appeal of the garden. It is not performing any actions, but it is contributing to the overall atmosphere of the garden."
+    },
+    {
+        "image_path": "assets/demo_images/real_lod/obj365_val_000000303384.jpg",
+        "height": 512,
+        "width": 629,
+        "raw_expression": "'A potted plant on a small round shelf.'",
+        "object_locations": {
+            "chosen_object": {
+                "id": 0,
+                "category": "potted plant",
+                "bbox": [
+                    163.3551635696,
+                    126.497070336,
+                    73.0724487205,
+                    67.870666496
+                ]
+            },
+            "other_objects": []
+        },
+        "global_caption": "The potted plant in the red bounding box is a small, green, leafy plant with a thin stem. It is located in the upper left corner of the image, inside a circular window or opening. The plant appears to be healthy and well-maintained. The red bounding box highlights the plant, drawing attention to it. The plant is not interacting with any other objects outside the red bounding box, but it is part of the overall interior design of the space, which includes a dining table, benches, and a refrigerator. The plant adds a touch of natural greenery to the room, contrasting with the predominantly white and beige color scheme.."
+    },
+    {
+        "image_path": "assets/demo_images/real_lod/obj365_val_000000641839.jpg",
+        "height": 480,
+        "width": 640,
+        "raw_expression": "'a green and white plant'",
+        "object_locations": {
+            "chosen_object": {
+                "id": 0,
+                "category": "potted plant",
+                "bbox": [
+                    219.551025408,
+                    0.135375984,
+                    157.44873043200005,
+                    174.106140144
+                ]
+            },
+            "other_objects": []
+        },
+        "global_caption": "The potted plant in the red bounding box is a tall, green, leafy plant with a glossy appearance. It is situated in the background of the image, behind the group of people seated at the dining table. The plant is not directly interacting with the people or objects in the foreground, but it adds a decorative element to the scene. The plant's location and size suggest it is placed in a corner or along a wall, providing a natural element to the indoor setting. The plant's green color contrasts with the more neutral tones of the room, drawing attention to itself. It is not performing any specific function in the context of the image, but it contributes to the overall ambiance of the scene.."
+    }
+]

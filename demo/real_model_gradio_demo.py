@@ -88,10 +88,10 @@ class RealModelDemo:
             example_images = gr.Dataset(
                 components=[image_input, text_input],
                 samples=[
-                    ['demo/real_model_demo_images/demo.jpg', 'man riding a carriage'],
-                    ['demo/real_model_demo_images/demo1.jpg', 'these two people each have a pink surfboard'],
-                    ['demo/real_model_demo_images/demo2.jpg', 'cows that are laid down'],
-                    ['demo/real_model_demo_images/demo3.jpg', 'woman in wedding dress next to a man in suit'],
+                    ['assets/demo_images/real_model/demo.jpg', 'man riding a carriage'],
+                    ['assets/demo_images/real_model/demo1.jpg', 'these two people each have a pink surfboard'],
+                    ['assets/demo_images/real_model/demo2.jpg', 'cows that are laid down'],
+                    ['assets/demo_images/real_model/demo3.jpg', 'woman in wedding dress next to a man in suit'],
                 ]
             )
             example_images.click(
