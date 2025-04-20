@@ -260,7 +260,7 @@ class RealLOD:
         elif "vlm" in action['tool_name'].lower():
             input_info = dict(image_path_or_url=info_pool["image_path"],
                               bbox=info_pool["origin_chosen_object"]["bbox"],
-                              target_area=action['tool_parameters']['target_area'])
+                              image_editing=action['tool_parameters']['image_editing'])
             action_output = self.vlm_tool.invoke(dict(
                 input_info = input_info,
                 question=action['tool_parameters']['question'],
@@ -325,11 +325,11 @@ class RealLOD:
         # Test the tool use
         self.tool_use(info_pool, action={"tool_name": "LLM"})
         self.tool_use(info_pool, action={"tool_name": "VLM", "tool_parameters": {"question": "Test", 
-                                                                             "target_area": "the object itself"}})
+                                                                             "image_editing": "the object itself"}})
         self.tool_use(info_pool, action={"tool_name": "VLM", "tool_parameters": {"question": "Test", 
-                                                                             "target_area": "the object and the surrounding areas"}})
+                                                                             "image_editing": "the object and the surrounding areas"}})
         self.tool_use(info_pool, action={"tool_name": "VLM", "tool_parameters": {"question": "Test", 
-                                                                             "target_area": "the whole image"}})        
+                                                                             "image_editing": "the whole image"}})        
         self.logger.debug(info_pool["history_messages"])
     
     def refine(self, sample_info: Dict):

@@ -22,17 +22,21 @@ user: |
         - the object itself.
         - the object and the surrounding areas.
         - the whole image.
+    - There are three image editing operations available when using VLM:
+        - "object crop": to crop the object from the image.
+        - "extened object crop": to crop the object and its surrounding areas from the image.
+        - "object highlight": to highlight the object in the image.
 
     Output format (in JSON):
     {
-    "response": "Your answer to user's require",
-    "reasoning": "Detailed reasoning behind your decision based on the expression, category, and feedback.",
+    "response": "The state of the expression and the actions you will take.",
+    "reasoning": "Detailed reasoning behind your decision based on the expression, category, and feedback. Please provide a thorough explanation of your thought process.",
     "actions": [
         {
         "tool_name": "LLM" or "VLM",
         "tool_parameters": {
             "question": "question to ask the VLM"
-            "target_area": "receptive field to focus on (if using VLM)"
+            "image_editing": "image editing operation to use"
         }
         }
     ]
@@ -40,8 +44,8 @@ user: |
 
     Think step-by-step. Use tools only when necessary. Clearly explain your logic in the reasoning section. The format should be extractly compliant with the JSON format. Do not include any additional text or explanations outside of the JSON format.
 
-    if the expression is correct, the actions should be empty.
-    
+    if the expression is correct, the actions should be empty. Please note the "actions" field should be a list, even if it is empty. The "reasoning" field should be a string. The "response" field should be a string. The "tool_name" field should be a string. The "tool_parameters" field should be a dictionary. The "question" field should be a string. The "image_editing" field should be a string. The image editing operation only applies to VLM. The "image_editing" field should be one of the following: "object crop", "extened object crop", "object highlight".
+
     Input: {"Expression": "{{current_expression}}", "Category": "{{category}}", "Feedback": "{{feedback}}"}
 
     Output:

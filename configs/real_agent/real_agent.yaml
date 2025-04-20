@@ -6,6 +6,7 @@ model_config:
     wrapper_type: "chatglm"
     model_name: "Eureka544/chatglm-6b"
     backend: "huggingface"
+    ckpt_path: "back/agent_train/output/agent0_midpromptbalanced_4cls_noconclusion_reformat_newprompt_4gpu/checkpoint-50000/adapter_model.bin"
 
     peft_config:
       peft_type: "lora"

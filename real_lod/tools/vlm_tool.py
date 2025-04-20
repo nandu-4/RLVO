@@ -96,21 +96,21 @@ class VLMTool(BaseTool):
         
         image_path_or_url = input_info.get("image_path_or_url")
         
-        target_area = input_info.get("target_area")
+        image_editing = input_info.get("image_editing")
         bbox = input_info.get("bbox")
         
         image = self._load_image(image_path_or_url)
         
         bbox = list(map(int, bbox))
-        if "the whole image" in target_area.lower():
+        if "object crop" in image_editing.lower():
             image = self.highlight(image, bbox)
-        elif "the object itself" in target_area.lower():
+        elif "extended object crop" in image_editing.lower():
             image = self.object_crop(image, bbox, 1)
-        elif "the object and the surrounding areas" in target_area.lower():
+        elif "object highlight" in image_editing.lower():
             image = self.highlight(image, bbox)
             image = self.object_crop(image, bbox, 2)
         else:
-            raise ValueError(f"Unsupported image editing: {target_area}")
+            raise ValueError(f"Unsupported image editing: {image_editing}")
         
         
         output = self.model(
