@@ -1,7 +1,6 @@
-# Model basic information
 prompt_template: "real_lod/prompts/vlm_tool.yaml"
 
-
+# Model basic information
 model_config:
   wrapper_type: "llava"
   model_name: "llava-hf/llava-v1.6-34b-hf"

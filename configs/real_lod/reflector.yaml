@@ -1,7 +1,7 @@
-# Model basic information
 prompt_template: "real_lod/prompts/reflector.yaml"
 template_name: "vicuna_v1.1"
 
+# Model basic information
 model_config:
   wrapper_type: "llm"
   model_name: "lmsys/vicuna-13b-v1.5"

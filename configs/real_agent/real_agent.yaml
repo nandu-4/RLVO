@@ -1,7 +1,7 @@
-# Model basic information
 prompt_template: "real_lod/prompts/real_agent.yaml"
 template_name: "chatglm"
 
+# Model basic information
 model_config:
     wrapper_type: "chatglm"
     model_name: "Eureka544/chatglm-6b"
