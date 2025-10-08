@@ -46,13 +46,13 @@ class VLMTool(BaseTool):
         _arun(*args, **kwargs):
             Raises a NotImplementedError as asynchronous execution is not supported.
     """
-    name = "vlm_tool"
-    description = "Use VLM model as a tool to reperception image"
+    name: str = "vlm_tool"
+    description: str = "Use VLM model as a tool to reperception image"
     args_schema: Type[BaseModel] = VLMToolPayload
     model: BaseModelWrapper = Field(..., description="The VLM model for tool use")
     template_name: Optional[str] = None
-    input_variables: List = ["input_info", "prompt"]
-    
+    input_variables: List[str] = ["input_info", "prompt"]
+
     def object_crop(self, image, bbox, scale_factor=2):
         w, h = image.width, image.height
         x_min, y_min, box_width, box_height = bbox
@@ -101,14 +101,21 @@ class VLMTool(BaseTool):
         
         image = self._load_image(image_path_or_url)
         
+        # Suggested fix for the logic block inside the _run method
+
         bbox = list(map(int, bbox))
-        if "object crop" in image_editing.lower():
+        edit_mode = image_editing.lower()
+
+        if "extended object crop" in edit_mode:
+            # First, highlight the box on the original image, then crop with an extension
             image = self.highlight(image, bbox)
-        elif "extended object crop" in image_editing.lower():
-            image = self.object_crop(image, bbox, 1)
-        elif "object highlight" in image_editing.lower():
+            image = self.object_crop(image, bbox, scale_factor=2) # Using a scale factor > 1
+        elif "object crop" in edit_mode:
+            # Just crop the object with no extension
+            image = self.object_crop(image, bbox, scale_factor=1)
+        elif "object highlight" in edit_mode:
+            # Just highlight the object
             image = self.highlight(image, bbox)
-            image = self.object_crop(image, bbox, 2)
         else:
             raise ValueError(f"Unsupported image editing: {image_editing}")
         

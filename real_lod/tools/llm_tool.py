@@ -15,13 +15,13 @@ ROLE_INDEX = {
 
 class LLMToolPayload(BaseModel):
     prompt: Any = Field(...)
-    
-    
+
+
 class LLMTool(BaseTool):
     """
     A tool for interacting with a large language model (LLM) as part of a workflow.
 
-    This class extends the BaseTool class and provides methods for processing prompts, 
+    This class extends the BaseTool class and provides methods for processing prompts,
     managing conversations, and generating responses using an LLM backend.
 
     Attributes:
@@ -43,13 +43,13 @@ class LLMTool(BaseTool):
         _arun(*args, **kwargs):
             Raises a NotImplementedError as asynchronous execution is not supported.
     """
-    name = "llm_tool"
-    description = "Use LLM model as a tool"
+    name: str = "llm_tool"
+    description: str = "Use LLM model as a tool"
     args_schema: Type[BaseModel] = LLMToolPayload
     model: BaseModelWrapper = Field(...)
     template_name: Optional[str] = None
     conversation: Optional[Conversation] = None
-    input_variables: List = ["prompt"]
+    input_variables: List[str] = ["prompt"]
 
     def _init_conversation(self):
         self.conversation = get_conv_template(self.template_name)
@@ -65,12 +65,12 @@ class LLMTool(BaseTool):
                     raise ValueError(f"Invalid role: {message.type}")
                 self.conversation.append_message(self.conversation.roles[role_index], message.content)
         self.conversation.append_message(self.conversation.roles[1], None)
-        
-        
+
+
         output = self.model(self.conversation.get_prompt(), stop=None)
         output = output.split(self.conversation.roles[1] + ":")[-1].strip().replace("\n", "")
         return output
-        
+
 
     def _arun(self, *args, **kwargs):
         raise NotImplementedError("Async not supported for LLaVATool")

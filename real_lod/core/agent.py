@@ -20,11 +20,11 @@ class Agent(LLM):
     """
     A class representing an agent for handling language model interactions.
 
-    This class extends the LLM class and provides methods for generating prompts, 
+    This class extends the LLM class and provides methods for generating prompts,
     managing conversations, and interacting with a language model backend.
 
     Attributes:
-        model (BaseModelWrapper): The language model backend used for generating responses.
+        _model (BaseModelWrapper): The language model backend used for generating responses.
         template_name (Optional[str]): The name of the conversation template to use.
         conversation (Optional[Conversation]): The conversation object for managing dialogue history.
 
@@ -42,21 +42,23 @@ class Agent(LLM):
         _llm_type -> str:
             Returns the type of the language model backend.
     """
-    model: BaseModelWrapper = PrivateAttr(default=None)
+    _model: BaseModelWrapper = PrivateAttr(default=None)
     template_name: Optional[str] = None
     conversation: Optional[Conversation] = None
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # Manually assign the private attribute
+        self._model = kwargs.get('model')
         self._init_conversation()
 
     def _init_conversation(self):
         self.conversation = get_conv_template(self.template_name)
-        
+
     @property
     def _llm_type(self) -> str:
-        return f"{self.model.backend}_{self.model.model_name}_llm"
-    
+        return f"{self._model.backend}_{self._model.model_name}_llm"
+
     def generate_prompt(self, prompts, stop=None, callbacks=None, **kwargs):
         """
         Generates prompts by processing input prompts and appending them to the conversation.
@@ -71,7 +73,7 @@ class Agent(LLM):
             List[str]: A list of generated prompt strings.
         """
         self._init_conversation()
-        
+
         prompt_strings = []
         for prompt in prompts:
             if isinstance(prompt, ChatPromptValue):
@@ -92,8 +94,8 @@ class Agent(LLM):
             prompt_strings.append(self.conversation.get_prompt())
 
         return self.generate(prompt_strings, stop=stop, callbacks=callbacks, **kwargs)
-    
-    
+
+
     def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
         """
         Generates a response for a single prompt using the model.
@@ -105,10 +107,10 @@ class Agent(LLM):
         Returns:
             str: The generated response string.
         """
-        
-        response = self.model(prompt)
+
+        response = self._model(prompt)
         return response
-    
+
     def _generate(self, prompts: List[str], stop: Optional[List[str]] = None) -> LLMResult:
         """
         Generates responses for a list of prompts.
