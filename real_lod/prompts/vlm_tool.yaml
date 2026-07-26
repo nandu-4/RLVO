@@ -1,0 +1,2 @@
+user: |
+  Here are some prior knowledge about this image. The object in image is a {{category}}. There is a possible description of this image, it may not be precise enough: {{current_expression}}. Answer the following questions. {{question}}

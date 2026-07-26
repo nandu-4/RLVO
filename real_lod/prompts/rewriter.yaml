@@ -1,0 +1,64 @@
+user: |
+    ## Task Description
+    You are an excellent text analyst and generator. 
+    I want a short text expression that correctly describing my chosen object in an image. Now I already have one expression but there might be mistakes in it and I want you to help with this.
+    I will provide you with the following as background knowledge:
+    1. Image Caption: a caption describing the content in an image.
+    2. Chosen Object: one or more objects chosen in this image to describe and their corresponding coordinates. The top-left corner of the image has coordinates [0, 0] and the bottom-right corner has coordinates [1, 1]. Each object is represented as {'id': unique object identification, 'category name': object category, 'box':[top-left x, top-left y, box width, box height]}
+    3. Other Object: other objects in image and their corresponding coordinates, which are provided to you with the same format as the 'Chosen Object'
+    4. Object Expression: a short text for you to analyse (this expression could be correct, partially correct or wrong)
+
+    ## Example 1
+    Image Caption: In the image, there are two women sitting at a table, both focused on their laptops. One of the women is holding up her middle finger, possibly as a gesture of defiance or humor. On the table, there is a bottle, a cup, and a laptop being used by one of the women. The woman with the laptop is wearing a scarf, and the other woman is positioned on the other side of the table.\nDrink: A clear plastic bottle of water is on the table. It is placed in front of the woman with the laptop.Laptop: The laptop is a black and silver Dell computer. The woman is using it while sitting at the table.Table: The table is a dining table where the woman is sitting with her laptop and a bottle of water.Bottle: The bottle is a clear plastic bottle of water. It is placed on the table in front of the woman with the laptop.
+    Chosen Object: [{'id':0, 'category name':'Laptop', 'box':[0.51, 0.62, 0.42, 0.36]}]
+    Other Object: []
+    Object Expression: 'black and silver Dell computer'
+    Reasoning: The description is consistent with the caption and is also centered on the laptop.
+    New Expression: 'black and silver Dell computer using by a woman'
+
+    ## Example 2
+    Image Caption: The image showcases a clean and well-organized kitchen with wooden floors and wooden cabinets. The kitchen features a white refrigerator, a sink with a window above it, and a stove with an oven below it. Additionally, there is a dishwasher and a washing machine in the kitchen. The appliances are neatly arranged, and the overall appearance of the kitchen is tidy and inviting.\nThe image depicts a clean and well-organized kitchen with wooden floors and a white refrigerator freezer on the left side of the room. There is a sink in the middle of the kitchen, and an oven is positioned towards the right side. A washing machine is also present, placed next to the oven. The kitchen has a window, allowing natural light to enter the space. The overall appearance of the kitchen is tidy and functional, with all the necessary appliances and fixtures in place.
+    Chosen Object: [{'id':0, 'category name':'Home appliance', 'box':[0.68, 0.52, 0.15, 0.05]}, {'id':1, 'category name':'Home appliance', 'box':[0.0, 0.26, 0.24, 0.74]}, {'id':2, 'category name':'Home appliance', 'box':[0.53, 0.56, 0.14, 0.28]}, {'id':3, 'category name':'Home appliance', 'box':[0.68, 0.22, 0.15, 0.06]}, {'id':4, 'category name':'Home appliance', 'box':[0.67, 0.57, 0.16, 0.21]}]
+    Other Object: []
+    Object Expression: 'appliance for cleaning dishes with water and detergent'
+    Reasoning: The description is centered on home appliance, but it only refers to the washing machine in the kitchen, which is only one of the chosen objects. The object category is 'home appliance', which also include the refrigerator, the sink and the stove mentioned in the given caption. So the description does not match all the objects belongs to 'home appliance' in the image. I can rewrite this description into a more specific one.
+    New Expression: 'home appliance of refrigerator, sink, stove and washing machine'
+
+    ## Example 3
+    Image Caption: The image features a person lying down, possibly a priest or a man of religious background. The individual is wearing a white cap, which is a distinguishing feature of the scene. The person appears to be sleeping or in a state of rest, with the white cap covering the head. The bed they are lying on is covered with purple fabric, adding a touch of color to the scene. The person's attire and the white cap suggest a connection to religious or spiritual life, making the image a representation of a person of faith or a religious figure.\nThe image features a man laying down in a white and purple robe, possibly a priest. He is wearing a white and red hat, which adds a touch of color to the scene. The man appears to be in a deep sleep or resting peacefully. The white and purple robe indicates that he might be a religious figure, such as a priest, and the hat could be a symbol of his position or a decorative accessory. The overall atmosphere of the image is calm and serene, with the man lying down in a comfortable position, evoking a sense of tranquility.
+    Chosen Object: [{'id':0, 'category name': 'person', 'box':[0.0, 0.07, 0.99, 0.92]}]
+    Other Object: []
+    Object Expression: 'touch of color in scene'
+    Reasoning: The 'touch of color in scene' is centered on the purple fabric or robe in image, not the chosen object of 'person'. I can rewrite this description to center on the chosen object.
+    New Expression: 'person lying on purple fabric'
+
+    ## Example 4
+    Image Caption: The image features a man and a dog staring at each other. The man is wearing glasses and appears to be engaged in a conversation with the dog. The dog is positioned on the right side of the scene, while the man is on the left.In the background, there are two other people who seem to be observing the interaction between the man and the dog. Additionally, there is a car parked in the middle of the scene, and a chair can be seen near the center of the image.\nA dog with its tongue out, looking at a man wearing glasses. The dog is a German Shepherd, and it seems to be panting while facing the man. The man is wearing a black shirt and glasses, and he appears to be engaged in a conversation with the dog. The setting includes a group of people, a car, and a motorcycle in the background, suggesting an outdoor gathering or event.
+    Chosen Object: [{'id':0, 'category name': 'Dog', 'box':[0.44, 0.29, 0.56, 0.70]}]
+    Other Object: []
+    Object Expression: 'man wearing glasses'
+    Reasoning: The description is centered on the man in image, not the chosen object of 'dog'. I can rewrite this description to be correctly describing the chosen object.
+    New Expression: 'dog facing the man wearing glasses'
+
+    ## Example 5
+    Image Caption: The image showcases a person wearing a leather jacket, standing in a dark setting. The person appears to be a woman with long hair, and she is wearing a shirt and tie with the jacket. The main focus of the image is the person, who is standing in the foreground while the background remains relatively dark. The overall scene gives off a sense of style and confidence as the woman confidently wears her leather jacket.\nCoat: The coat in the image is black and leather. It is worn by a person, likely a woman, and is styled in a way that accentuates the figure. The coat is likely made of high-quality leather, giving it a sleek and elegant appearance. It is a long coat that can be worn as a fashion statement or for protection from the elements.Human face: The human face in the image is that of a woman with long hair. Her hair is brown, and she is wearing a black leather coat. The woman appears to be standing in front of a curtain, adding depth and interest to the background of the image. The focus of the image is on the woman and her outfit, with the coat and her hair being the main visual elements.
+    Chosen Object: [{'id':0, 'category name': 'Coat', 'box':[0.03, 0.23, 0.90, 0.77]}]
+    Other Object: []
+    Object Expression: 'woman with long hair'
+    Reasoning: The description is centered on the woman, not the chosen object of 'coat'. I can rewrite this description into a correct one.
+    New Expression: 'coat worn by woman with long hair'
+
+
+    ## Process Instruction
+    As an assistant, analyze the 'Object Expression' and generate a 'New Expression' based on it, which correctly describes the chosen object: 
+    1. Your new expression should be centered on the chosen object, and describe the correct object category 
+    2. Your new expression should be consistent with information provided by the given caption and with general knowledge 
+    3. Your new expression should be a short phrase and has reasonable meaning 
+    
+    ## Your task
+    Image Caption: {{caption}}
+    Chosen Object: {{chosen_object}}
+    Other Object: {{other_objects}}
+    Object Expression: {{current_expression}}
+
+    Analyse this Object Expression and respond with your generated 'New Expression'. Do not explain.

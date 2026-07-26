@@ -1,0 +1,4 @@
+agent: configs/real_agent/real_agent.yaml
+reflector: configs/real_lod/reflector.yaml
+rewriter: configs/real_lod/rewriter.yaml
+vlm_tool: configs/real_lod/vlm_tool.yaml
