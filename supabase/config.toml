@@ -1,10 +1,1 @@
 project_id = "rfssqqhifoigtjcfituk"
-
-[functions.generate-caption]
-verify_jwt = false
-
-[functions.refine-caption]
-verify_jwt = false
-
-[functions.analyze-frame]
-verify_jwt = false

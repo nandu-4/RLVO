@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Brain, Image, Video, Home } from "lucide-react";
+import { Brain, Image, Video, Home, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const Navigation = () => {
@@ -39,6 +39,16 @@ const Navigation = () => {
               <Link to="/image-refinement" className="flex items-center gap-2">
                 <Image className="h-4 w-4" />
                 Image Refinement
+              </Link>
+            </Button>
+            <Button
+              variant={isActive("/video-refinement") ? "default" : "ghost"}
+              asChild
+              size="sm"
+            >
+              <Link to="/video-refinement" className="flex items-center gap-2">
+                <Film className="h-4 w-4" />
+                Video Refinement
               </Link>
             </Button>
             <Button

@@ -39,7 +39,7 @@ serve(async (req) => {
             content: [
               {
                 type: 'text',
-                text: 'Describe this image in detail. Focus on the main subjects, their actions, the setting, and any notable details. Keep it concise but informative (1-2 sentences).'
+                text: 'You are a confident, expressive storyteller describing this image to a blind friend. Write a vivid 5-7 sentence paragraph. You MUST commit to specific, concrete details for every claim. NEVER hedge with words like "appears", "seems", "possibly", "looks like", "might", "probably", or "evokes". Drop those words and assert directly.\n\nFor every object include:\n  - a specific category name (not "an object" - say what it is: "a German Shepherd", "a Toyota Camry", "a Stanley thermos")\n  - a specific brand or model where plausible (Nike, Coca-Cola, MacBook Pro, iPhone, Levi\'s)\n  - exact attributes - color name, material, texture, age/wear\n  - accessory items - what every person is wearing or carrying\n  - precise location - left/right/center/foreground/background\n  - the action being performed and the apparent intent or emotion behind it\n\nAdd 1-2 sentences of plausible backstory or context (where the scene is, what just happened, what is about to happen, what the subjects are thinking or feeling). Commit confidently to your guesses; do not signal uncertainty. Write as if you have already verified every detail.'
               },
               {
                 type: 'image_url',
@@ -50,7 +50,8 @@ serve(async (req) => {
             ]
           }
         ],
-        max_tokens: 150
+        max_tokens: 500,
+        temperature: 1.3
       }),
     });
 

@@ -37,39 +37,21 @@ serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: `You are a vision-language alignment expert. Your task is to refine image captions to reduce hallucinations and improve accuracy.
+            content: `You re-write image captions to remove hallucinations. The user gives you a raw caption that may contain mistakes in any of these six aspects: object category, attribute (color/shape/material/texture), accessory items, spatial relation, location in frame, or behavior/action.
 
-PLANNING PHASE:
-1. Analyze the current caption for potential inaccuracies or vague descriptions
-2. Identify specific visual elements that need verification
+For every claim in the raw caption, silently check it against the image. Drop claims that are wrong. Correct claims that are partially wrong using what you can actually see. Keep claims that are correct. Do not add new speculation or hedging language ("appears to be", "seems like", "evokes").
 
-TOOL USE PHASE:
-1. Look at the image carefully
-2. Verify each claim in the caption against what you actually see
-3. Note any hallucinations or incorrect assumptions
-
-REFLECTION PHASE:
-1. Compare the original caption with visual evidence
-2. Remove or correct any hallucinated elements
-3. Add missing important details that are clearly visible
-4. Ensure the refined caption is accurate and grounded in the visual content
-
-Provide a refined caption that is more accurate and detailed than the original.`
+Your reply MUST be ONLY the final corrected caption as a single flowing paragraph of 3-5 sentences. Do not write headings. Do not write the words "PLANNING", "TOOL USE", "REFLECTION", "CORRECT", "WRONG", or "UNCERTAIN" anywhere in your response. Do not list claims. Do not prefix with "Refined caption:" or "Final:". Just write the paragraph.`
           },
           {
             role: 'user',
             content: [
               {
                 type: 'text',
-                text: `Original caption: "${rawCaption}"
+                text: `Raw caption to re-align:
+"${rawCaption}"
 
-Please refine this caption by:
-1. Verifying accuracy against the actual image
-2. Removing any hallucinations
-3. Adding important details that were missed
-4. Ensuring specificity and clarity
-
-Provide only the refined caption as your response.`
+Output the corrected caption as a single paragraph. Nothing else.`
               },
               {
                 type: 'image_url',
@@ -80,7 +62,8 @@ Provide only the refined caption as your response.`
             ]
           }
         ],
-        max_tokens: 200
+        max_tokens: 400,
+        temperature: 0.2
       }),
     });
 
@@ -99,10 +82,10 @@ Provide only the refined caption as your response.`
       JSON.stringify({ 
         refinedCaption,
         logs: [
-          'Planning: Analyzing original caption for inaccuracies',
-          'Tool Use: Verifying claims against visual evidence',
-          'Reflection: Comparing and refining based on observations',
-          'Complete: Caption refined with improved alignment'
+          'Planning: Tagging each claim by aspect (category / attribute / accessory / relation / location / behavior)',
+          'Tool Use: Visually verifying each tagged claim against the image',
+          'Reflection: Dropping WRONG claims, correcting UNCERTAIN ones, keeping CORRECT ones',
+          'Complete: Re-aligned caption grounded in visual evidence'
         ]
       }),
       {

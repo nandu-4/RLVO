@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeAi } from "@/integrations/aiClient";
 import Navigation from "@/components/Navigation";
 
 const ImageRefinement = () => {
@@ -26,12 +26,10 @@ const ImageRefinement = () => {
         try {
           setRefinementLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Generating caption with AI...`]);
           
-          const { data, error } = await supabase.functions.invoke('generate-caption', {
-            body: { image: imageData }
-          });
+          const { data, error } = await invokeAi<{ caption: string }>('generate-caption', { image: imageData });
           
-          if (error) throw error;
-          
+          if (error || !data) throw error ?? new Error("No data");
+
           setRawCaption(data.caption);
           setRefinementLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Caption generated successfully`]);
           toast.success("Image analyzed with AI");
@@ -52,15 +50,13 @@ const ImageRefinement = () => {
     setRefinementLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Starting agentic refinement...`]);
     
     try {
-      const { data, error } = await supabase.functions.invoke('refine-caption', {
-        body: { 
-          image: selectedImage,
-          rawCaption: rawCaption
-        }
-      });
-      
-      if (error) throw error;
-      
+      const { data, error } = await invokeAi<{ refinedCaption: string; logs: string[] }>(
+        'refine-caption',
+        { image: selectedImage, rawCaption }
+      );
+
+      if (error || !data) throw error ?? new Error("No data");
+
       // Add processing logs
       data.logs.forEach((log: string, index: number) => {
         setTimeout(() => {

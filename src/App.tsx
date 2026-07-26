@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import ImageRefinement from "./pages/ImageRefinement";
+import VideoRefinement from "./pages/VideoRefinement";
 import Proctoring from "./pages/Proctoring";
 import NotFound from "./pages/NotFound";
 
@@ -19,6 +20,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/image-refinement" element={<ImageRefinement />} />
+          <Route path="/video-refinement" element={<VideoRefinement />} />
           <Route path="/proctoring" element={<Proctoring />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
