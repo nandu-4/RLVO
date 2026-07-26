@@ -157,9 +157,13 @@ If Pass 1 returns unparseable JSON the function degrades gracefully to a single-
 
 Two pretrained models run simultaneously in the browser, plus DOM events:
 
-### Baseline Calibration (first 3 seconds)
+### Two-Phase Calibration (~7 seconds)
 
-The first **90 frames** record the user's neutral face aspect ratio and iris offset. Every later threshold is a **delta from this baseline** — so camera angle, distance, and seating position cannot cause false positives.
+**Phase 1 — center (60 frames):** records the neutral face aspect ratio and iris center. Every later threshold is a **delta from this baseline** — camera angle, distance, and seating position cannot cause false positives.
+
+**Phase 2 — corner dots (4 × 40 frames):** a full-screen overlay shows a dot at each screen corner; the candidate follows it **with eyes only**. The recorded iris extremes (horizontal *and* vertical) become the candidate's **personal gaze bounds** — anything outside the box is off-screen by definition. If the candidate doesn't follow the dots (range too small), gaze falls back to center-delta mode.
+
+**Scene object baseline:** during calibration, every object COCO-SSD sees in the room is recorded as *authorized*. This powers novel-object detection below.
 
 ### Head Turn (Yaw) — MediaPipe, every frame
 
@@ -169,10 +173,11 @@ yaw = (noseTip.x − earMidX) / (earSpan / 2)      alert if |yaw| > 0.33
 
 ### Gaze Tracking (Iris) — MediaPipe, every frame
 
-Iris landmarks 468/473 (needs `refineLandmarks: true`), normalized by eye width relative to the eye-corner midpoint:
+Iris landmarks 468/473 (needs `refineLandmarks: true`), normalized by eye width relative to the eye-corner midpoint, on **both axes**:
 
-- Deviation > **5% of eye width** from calibrated baseline
-- **Leaky counter**: deviated frames increment a score; centered frames *drain* it by 2 instead of resetting — so one frame of iris jitter can't erase a sustained glance. Alert at score 10 (~0.4 s).
+- Off-screen = outside the corner-calibrated personal bounds (left/right/up/down), expanded by a 20% margin so on-screen reading never triggers
+- **Leaky counter**: deviated frames increment a score; in-bounds frames *drain* it instead of resetting — one frame of iris jitter can't erase a sustained glance (~0.3 s to trigger)
+- **Escalation policy**: the first 2 off-screen gazes are logged quietly at low severity; from the **3rd occurrence** every one is a high-severity violation
 - Skipped while the head itself is turned (the head-turn alert covers that; iris geometry is unreliable at high yaw). Gaze therefore specifically catches **eyes-only glancing**.
 
 ### Looking Down / Phone Use (faceAR) — MediaPipe, every frame
@@ -183,11 +188,12 @@ faceAR = faceHeight / faceWidth        (foreshortens when head tilts down)
 
 A **10% compression** below baseline sustained **20 frames** (~0.7 s) → `looking_down` alert. This catches phone-in-lap use that the object detector cannot see.
 
-### Phone in Frame (COCO-SSD) — independent 700 ms timer
+### Phone + Novel Objects (COCO-SSD) — independent 700 ms timer
 
-- Runs on its **own timer**, decoupled from the Face Mesh loop, so face-tracking latency never delays it
-- Inference on a **320px downscaled canvas** (not the full 1280×720 frame) → far faster per-detect on the WebGL backend, which is explicitly selected and **warmed up** at session start (first inference compiles shaders)
-- `cell phone` class at confidence ≥ **0.45**, confirmed across **2 consecutive checks** before alerting — catches phones much sooner than a single high-confidence gate while keeping false positives out
+- Runs on its **own timer**, decoupled from the Face Mesh loop, so face-tracking latency never delays it; inference on a **512px downscaled canvas** on the WebGL backend, explicitly selected and **warmed up** at session start
+- **Phone: alerts on FIRST sight** at confidence ≥ 0.35 (`cell phone` or `remote` — COCO labels back-facing phones as remotes). A candidate photographing the exam paper is in and out of frame in ~2 s, so there is no time for multi-hit confirmation — the AI verifier is the precision filter, not a slow confirmation loop
+- **Novel objects: anything not in the scene baseline** (recorded during calibration) at ≥ 0.4 is flagged instantly and sent to the verifier with the question "is this an exam-cheating aid?" — notes, books, earbuds, second devices get CONFIRMED; water bottles, cups, chargers get REFUTED with no penalty. One flag per object class per session.
+- Model-load failures (ad-blockers / Brave Shields block the weights CDN) are retried and then **surfaced** — a toast plus "Detector blocked!" in the status panel, never a silent "Clear"
 
 ### Tab / Focus — DOM events
 

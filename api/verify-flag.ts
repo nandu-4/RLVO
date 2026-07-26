@@ -8,7 +8,9 @@ export const maxDuration = 30;
 
 const FLAG_QUESTIONS: Record<string, string> = {
   phone_detected:
-    "Is a mobile phone (or similar handheld device) actually visible anywhere in this frame? Reflections, remote controls, wallets, glasses cases, and dark rectangular objects that are not phones do NOT count.",
+    "Is a mobile phone actually visible anywhere in this frame? Chargers, power banks, power adapters, remote controls, calculators, wallets, glasses cases, and other rectangular objects that are not phones do NOT count. If the object is more plausibly one of those than a phone, answer REFUTED — do not hide behind UNCERTAIN when an innocent explanation is the better fit.",
+  new_object:
+    "A new object that was NOT present at the start of the exam session has appeared in this frame (the detector names its guess in the claim). Identify the most prominent newly-visible object. Is it an item that could aid cheating in an exam — a phone, written notes or chits, a book, earphones/earbuds, a smartwatch, a calculator, or a second screen/device? Harmless everyday items (water bottle, cup, charger or cable, tissue, food, spectacles case) are NOT cheating aids and mean REFUTED.",
   multiple_faces:
     "How many distinct REAL, live human faces are visible in this frame? Faces in posters, photos, paintings, or on screens in the background do NOT count as real people. Objects that merely resemble a face (e.g. a phone's camera lenses) do NOT count.",
   no_face:

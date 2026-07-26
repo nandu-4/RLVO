@@ -24,6 +24,7 @@ import {
   BadgeCheck,
   HelpCircle,
   Sparkles,
+  Package,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ const VIOLATION_ICONS: Record<ViolationType, React.ReactNode> = {
   no_face: <UserX className="h-4 w-4" />,
   multiple_faces: <Users className="h-4 w-4" />,
   phone_detected: <Smartphone className="h-4 w-4" />,
+  new_object: <Package className="h-4 w-4" />,
   tab_switch: <ExternalLink className="h-4 w-4" />,
   session_start: <Play className="h-4 w-4" />,
   session_end: <Square className="h-4 w-4" />,
@@ -68,6 +70,7 @@ const VIOLATION_LABELS: Record<ViolationType, string> = {
   no_face: "No Face",
   multiple_faces: "Multi-Face",
   phone_detected: "Phone Detected",
+  new_object: "New Object",
   tab_switch: "Tab Switch",
   session_start: "Started",
   session_end: "Ended",
@@ -165,6 +168,49 @@ function AlertItem({ alert }: { alert: ProctoringAlert }) {
   );
 }
 
+// ─── Calibration overlay — center dot, then 4 corner dots for gaze bounds ─────
+
+const CORNER_POS = [
+  "top-6 left-6",      // 0 TL
+  "top-6 right-6",     // 1 TR
+  "bottom-6 right-6",  // 2 BR
+  "bottom-6 left-6",   // 3 BL
+];
+
+function CalibrationOverlay({ status }: { status: LiveStatus }) {
+  if (!status.isCalibrating) return null;
+  const corners = status.calibStage === "corners";
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 select-none">
+      {/* The dot */}
+      <div
+        className={
+          corners
+            ? `absolute ${CORNER_POS[status.calibCorner]} h-6 w-6 rounded-full bg-primary ring-8 ring-primary/30 animate-pulse`
+            : "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-6 w-6 rounded-full bg-primary ring-8 ring-primary/30 animate-pulse"
+        }
+      />
+      {/* Instructions */}
+      <div className="absolute inset-x-0 top-1/2 translate-y-8 text-center text-white px-6 pointer-events-none">
+        <p className="text-xl font-semibold">
+          {corners
+            ? `Follow the dot with your EYES only (${status.calibCorner + 1}/4)`
+            : "Look at the dot — measuring your neutral position"}
+        </p>
+        <p className="text-sm text-white/70 mt-2">
+          {corners
+            ? "Keep your head still — this teaches the system your personal gaze range"
+            : "Sit naturally, as you will during the exam"}
+        </p>
+        <div className="max-w-xs mx-auto mt-4">
+          <Progress value={status.calibProgress} className="h-2" />
+          <p className="text-xs text-white/60 mt-1">{status.calibProgress}%</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Live status panel ────────────────────────────────────────────────────────
 
 function StatusRow({
@@ -213,11 +259,9 @@ function LiveStatusPanel({
         : "Centered";
 
   const gazeLabel =
-    status.gazeDirection === "left"
-      ? `Off-screen Left (Δ${status.gazeDelta}%)`
-      : status.gazeDirection === "right"
-        ? `Off-screen Right (Δ${status.gazeDelta}%)`
-        : "On Screen";
+    status.gazeDirection === "center"
+      ? "On Screen"
+      : `Off-screen ${status.gazeDirection[0].toUpperCase()}${status.gazeDirection.slice(1)} (Δ${status.gazeDelta}%)`;
 
   const pitchLabel = status.lookingDown
     ? `Down — phone suspected (${Math.abs(status.faceARDelta)}% face compression)`
@@ -391,13 +435,16 @@ const Proctoring = () => {
   const totalViolations =
     stats.headTurns + stats.gazeAways + stats.noFaceEvents +
     stats.multipleFaceEvents + stats.lookingDownEvents +
-    stats.phoneDetectedEvents + stats.tabSwitches;
+    stats.phoneDetectedEvents + stats.newObjectEvents + stats.tabSwitches;
 
   const hasData = alerts.length > 0;
 
   return (
     <div className="min-h-screen bg-gradient-hero">
       <Navigation />
+
+      {/* Full-screen gaze calibration overlay */}
+      {isMonitoring && <CalibrationOverlay status={liveStatus} />}
 
       {/* Violation banner */}
       {currentViolation && (
@@ -569,6 +616,7 @@ const Proctoring = () => {
               <StatCard title="Looking Down" value={stats.lookingDownEvents} warn={stats.lookingDownEvents > 2} />
               <StatCard title="Tab Switches" value={stats.tabSwitches} warn={stats.tabSwitches > 0} />
               <StatCard title="Phone Detected" value={stats.phoneDetectedEvents} warn={stats.phoneDetectedEvents > 0} />
+              <StatCard title="New Objects" value={stats.newObjectEvents} warn={stats.newObjectEvents > 0} />
               <StatCard
                 title="Dismissed by AI"
                 value={stats.dismissedFlags}
@@ -629,6 +677,7 @@ const Proctoring = () => {
                   { icon: <UserX className="h-5 w-5" />,    label: "No Face",    desc: "Left frame" },
                   { icon: <Users className="h-5 w-5" />,    label: "Multi-Face", desc: "Extra person" },
                   { icon: <ExternalLink className="h-5 w-5" />, label: "Tab Switch", desc: "Focus loss" },
+                  { icon: <Package className="h-5 w-5" />, label: "New Object", desc: "Scene baseline" },
                   { icon: <Sparkles className="h-5 w-5" />, label: "AI Verifier", desc: "Fact-checks flags" },
                 ].map(({ icon, label, desc }) => (
                   <div key={label} className="flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/50">

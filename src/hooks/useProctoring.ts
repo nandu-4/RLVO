@@ -12,6 +12,7 @@ export type ViolationType =
   | "no_face"
   | "multiple_faces"
   | "phone_detected"
+  | "new_object"
   | "tab_switch"
   | "session_start"
   | "session_end";
@@ -52,6 +53,7 @@ export interface SessionStats {
   multipleFaceEvents: number;
   lookingDownEvents: number;
   phoneDetectedEvents: number;
+  newObjectEvents: number;
   tabSwitches: number;
   dismissedFlags: number;
 }
@@ -61,13 +63,15 @@ export interface LiveStatus {
   multipleFaces: boolean;
   phoneInFrame: boolean;
   headDirection: "center" | "left" | "right";
-  gazeDirection: "center" | "left" | "right";
+  gazeDirection: "center" | "left" | "right" | "up" | "down";
   lookingDown: boolean;
   yawPct: number;
   faceARDelta: number;  // face compression % from baseline (negative = looking down)
-  gazeDelta: number;    // iris offset deviation from calibrated baseline (%)
+  gazeDelta: number;    // how far gaze sits outside the calibrated bounds (%)
   isCalibrating: boolean;
-  calibProgress: number; // 0-100
+  calibProgress: number;               // 0-100 overall
+  calibStage: "center" | "corners";    // center baseline, then 4 corner dots
+  calibCorner: number;                 // 0=TL 1=TR 2=BR 3=BL (corners stage)
 }
 
 // ─── Detection constants ──────────────────────────────────────────────────────
@@ -76,10 +80,11 @@ const ALERT_COOLDOWN: Record<ViolationType, number> = {
   head_turn_left: 2500,
   head_turn_right: 2500,
   looking_down: 4000,
-  gaze_away: 2000,
+  gaze_away: 2500,
   no_face: 2000,
   multiple_faces: 3000,
   phone_detected: 4000,
+  new_object: 8000,
   tab_switch: 5000,
   session_start: 0,
   session_end: 0,
@@ -88,9 +93,14 @@ const ALERT_COOLDOWN: Record<ViolationType, number> = {
 // Head yaw: fraction of half-ear-span — raised to 0.33 to cut borderline turns
 const HEAD_TURN_THRESHOLD = 0.33;
 
-// Calibration: sample 90 frames (~3 s) while the person looks at the screen.
-// All pitch / gaze thresholds are DELTAS from this calibrated baseline.
-const CALIB_FRAMES = 90;
+// ── Calibration: two phases ──
+// Phase 1 (center): look at the screen — records neutral faceAR + gaze center.
+// Phase 2 (corners): follow a dot to each screen corner WITH EYES ONLY —
+// records the personal gaze range. Anything outside that range is off-screen.
+const CALIB_CENTER_FRAMES = 60;   // ~2 s
+const CORNER_FRAMES = 40;         // ~1.3 s per corner
+const CORNER_SKIP = 12;           // frames ignored per corner while eyes travel
+const CALIB_TOTAL_FRAMES = CALIB_CENTER_FRAMES + 4 * CORNER_FRAMES;
 
 // Face Aspect Ratio compression: faceAR = faceH/faceWidth.
 // When head tilts down (phone use), the face foreshortens vertically → faceAR
@@ -100,15 +110,25 @@ const LOOK_DOWN_AR_THRESHOLD = 0.10;
 // Consecutive frames faceAR must stay compressed before alerting (~0.7 s at 30 fps)
 const LOOK_DOWN_SUSTAINED = 20;
 
-// Gaze (iris offset from eye-centre, normalised by eye-width) must deviate
-// this much from the calibrated baseline to trigger an alert
+// ── Gaze bounds (from corner calibration) ──
+// Bounds are expanded by this fraction of the measured range so ordinary
+// on-screen reading never triggers; only genuinely off-screen gaze does.
+const GAZE_MARGIN_FRAC = 0.2;
+// If the measured range is smaller than this the corner calibration failed
+// (user didn't follow the dots) — fall back to center-delta detection.
+const GAZE_MIN_RANGE = 0.03;
+// Center-delta fallback threshold (fraction of eye width)
 const GAZE_DELTA = 0.05;
 
-// Leaky-counter score gaze must accumulate before alerting (~0.4 s of
+// Leaky-counter score gaze must accumulate before alerting (~0.3 s of
 // deviation; centered frames drain the score instead of hard-resetting it,
 // so single-frame iris jitter no longer wipes out a sustained glance)
-const GAZE_SUSTAINED = 10;
+const GAZE_SUSTAINED = 8;
 const GAZE_LEAK = 2;
+
+// First 2 off-screen gazes are logged quietly (low severity); from the 3rd
+// onward each becomes a real violation.
+const GAZE_ESCALATE_AFTER = 3;
 
 // ── Phone detection ──
 // COCO-SSD inference runs on its own timer (decoupled from the FaceMesh rAF
@@ -122,8 +142,18 @@ const PHONE_DETECT_WIDTH = 512;
 // Recall over precision at stage 1: the agentic verifier fact-checks the
 // frame before any penalty, so a trigger-happy detector costs nothing but
 // a verification call, while a conservative one misses real phones.
+// Phones alert on FIRST sight — a candidate photographing the paper is in
+// and out of frame in ~2 s, so there is no time for multi-hit confirmation.
 const PHONE_SCORE_THRESHOLD = 0.35;
-const PHONE_CONFIRM_HITS = 2;
+
+// ── Scene-baseline novel-object detection ──
+// During calibration every object COCO sees is recorded as the room's
+// baseline. Any NEW class appearing mid-session is flagged instantly and
+// sent to the AI verifier ("is this an exam-cheating aid?"). One flag per
+// class per session — after flagging, the class joins the baseline.
+const NEW_OBJECT_THRESHOLD = 0.4;
+const BASELINE_OBJECT_THRESHOLD = 0.35;
+const OBJECT_IGNORE_CLASSES = new Set(["person", "cell phone", "remote"]);
 
 // ── Agentic verification ──
 // Flag types whose claim can be fact-checked from a single frame.
@@ -131,6 +161,7 @@ const PHONE_CONFIRM_HITS = 2;
 // too frequent to verify economically.
 const VERIFIABLE_TYPES = new Set<ViolationType>([
   "phone_detected",
+  "new_object",
   "multiple_faces",
   "no_face",
   "looking_down",
@@ -175,8 +206,8 @@ function downloadBlob(content: string, mimeType: string, filename: string) {
   document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
-const DEFAULT_STATS: SessionStats = { headTurns: 0, gazeAways: 0, noFaceEvents: 0, multipleFaceEvents: 0, lookingDownEvents: 0, phoneDetectedEvents: 0, tabSwitches: 0, dismissedFlags: 0 };
-const DEFAULT_LIVE: LiveStatus = { faceDetected: false, multipleFaces: false, phoneInFrame: false, headDirection: "center", gazeDirection: "center", lookingDown: false, yawPct: 0, faceARDelta: 0, gazeDelta: 0, isCalibrating: false, calibProgress: 0 };
+const DEFAULT_STATS: SessionStats = { headTurns: 0, gazeAways: 0, noFaceEvents: 0, multipleFaceEvents: 0, lookingDownEvents: 0, phoneDetectedEvents: 0, newObjectEvents: 0, tabSwitches: 0, dismissedFlags: 0 };
+const DEFAULT_LIVE: LiveStatus = { faceDetected: false, multipleFaces: false, phoneInFrame: false, headDirection: "center", gazeDirection: "center", lookingDown: false, yawPct: 0, faceARDelta: 0, gazeDelta: 0, isCalibrating: false, calibProgress: 0, calibStage: "center", calibCorner: 0 };
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
@@ -216,21 +247,29 @@ export function useProctoring() {
   // Sustained gaze-away counter
   const gazeFramesRef = useRef(0);
 
-  // COCO-SSD phone detection
+  // COCO-SSD object detection
   const cocoModelRef = useRef<any>(null);
   const phoneTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const phoneCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const isCocoRunningRef = useRef(false);
   const phoneInFrameRef = useRef(false);
-  const phoneHitsRef = useRef(0);
+  const baselineObjectsRef = useRef<Set<string>>(new Set());
 
-  // Calibration
+  // Calibration — phase 1: center baseline; phase 2: 4 corner dots
+  const calibPhaseRef = useRef<"center" | "corners">("center");
   const calibCountRef = useRef(0);
   const calibFaceARSumRef = useRef(0);
-  const calibGazeSumRef = useRef(0);
+  const calibGazeHSumRef = useRef(0);
+  const calibGazeVSumRef = useRef(0);
+  const calibGazeNRef = useRef(0);
+  const calibCornerRef = useRef(0);
+  const cornerFrameRef = useRef(0);
+  const cornerSumsRef = useRef<{ h: number; v: number; n: number }[]>([]);
   const faceARBaselineRef = useRef(0);
   const gazeBaselineRef = useRef(0);
+  const gazeBoundsRef = useRef<{ hMin: number; hMax: number; vMin: number; vMax: number } | null>(null);
   const isCalibratedRef = useRef(false);
+  const gazeEventsRef = useRef(0);
 
   // Live status throttle
   const lastLiveRef = useRef(0);
@@ -348,6 +387,7 @@ export function useProctoring() {
       else if (type === "multiple_faces") next.multipleFaceEvents++;
       else if (type === "looking_down") next.lookingDownEvents++;
       else if (type === "phone_detected") next.phoneDetectedEvents++;
+      else if (type === "new_object") next.newObjectEvents++;
       else if (type === "tab_switch") next.tabSwitches++;
       return next;
     });
@@ -417,9 +457,11 @@ export function useProctoring() {
 
     const faceH    = chin.y - forehead.y;
 
-    // ── Iris gaze ──────────────────────────────────────────────────────────
+    // ── Iris gaze (horizontal + vertical) ──────────────────────────────────
     // Iris landmarks 468 / 473 are only present with refineLandmarks: true
-    let gazeOff = 0;
+    let gazeOff = 0;   // horizontal iris offset (fraction of eye width)
+    let gazeVOff = 0;  // vertical iris offset (fraction of eye width — more
+                       // stable than eye height, which collapses on blinks)
     let gazeValid = false;
     if (lm.length > 473) {
       const lIris = lm[468]; // left iris centre (person's left = image right)
@@ -442,6 +484,11 @@ export function useProctoring() {
         const lOff = (lIris.x - (lOuter.x + lInner.x) / 2) / lEyeW;
         const rOff = (rIris.x - (rOuter.x + rInner.x) / 2) / rEyeW;
         gazeOff = (lOff + rOff) / 2;
+        // Vertical: iris y relative to the eye-corner midline. Screen y grows
+        // downward, so positive = looking down, negative = looking up.
+        const lVOff = (lIris.y - (lOuter.y + lInner.y) / 2) / lEyeW;
+        const rVOff = (rIris.y - (rOuter.y + rInner.y) / 2) / rEyeW;
+        gazeVOff = (lVOff + rVOff) / 2;
         gazeValid = true;
       }
     }
@@ -451,21 +498,86 @@ export function useProctoring() {
     const faceAR = faceWidth > 0.01 ? faceH / faceWidth : 0;
 
     if (!isCalibratedRef.current) {
-      calibCountRef.current++;
-      calibFaceARSumRef.current += faceAR;
-      if (gazeValid) calibGazeSumRef.current += gazeOff;
+      let framesDone = 0;
 
-      const progress = Math.round((calibCountRef.current / CALIB_FRAMES) * 100);
-      if (now - lastLiveRef.current > LIVE_THROTTLE_MS) {
-        lastLiveRef.current = now;
-        setLiveStatus({ ...DEFAULT_LIVE, faceDetected: true, isCalibrating: true, calibProgress: progress });
+      if (calibPhaseRef.current === "center") {
+        calibCountRef.current++;
+        calibFaceARSumRef.current += faceAR;
+        if (gazeValid) {
+          calibGazeHSumRef.current += gazeOff;
+          calibGazeVSumRef.current += gazeVOff;
+          calibGazeNRef.current++;
+        }
+        framesDone = calibCountRef.current;
+
+        if (calibCountRef.current >= CALIB_CENTER_FRAMES) {
+          faceARBaselineRef.current = calibFaceARSumRef.current / CALIB_CENTER_FRAMES;
+          const n = Math.max(1, calibGazeNRef.current);
+          gazeBaselineRef.current = calibGazeHSumRef.current / n;
+          calibPhaseRef.current = "corners";
+          calibCornerRef.current = 0;
+          cornerFrameRef.current = 0;
+          cornerSumsRef.current = [{ h: 0, v: 0, n: 0 }, { h: 0, v: 0, n: 0 }, { h: 0, v: 0, n: 0 }, { h: 0, v: 0, n: 0 }];
+          toast.info("Now follow the dot with your EYES only — keep your head still");
+        }
+      } else {
+        // Corners phase: record iris offsets while the user looks at each dot
+        cornerFrameRef.current++;
+        const corner = calibCornerRef.current;
+        if (cornerFrameRef.current > CORNER_SKIP && gazeValid) {
+          const s = cornerSumsRef.current[corner];
+          s.h += gazeOff; s.v += gazeVOff; s.n++;
+        }
+        if (cornerFrameRef.current >= CORNER_FRAMES) {
+          calibCornerRef.current++;
+          cornerFrameRef.current = 0;
+
+          if (calibCornerRef.current >= 4) {
+            // All corners sampled — compute the personal gaze bounds
+            const means = cornerSumsRef.current.map((s) =>
+              s.n > 0 ? { h: s.h / s.n, v: s.v / s.n } : null,
+            );
+            const valid = means.filter(Boolean) as { h: number; v: number }[];
+            if (valid.length === 4) {
+              const hs = valid.map((m) => m.h);
+              const vs = valid.map((m) => m.v);
+              let hMin = Math.min(...hs), hMax = Math.max(...hs);
+              let vMin = Math.min(...vs), vMax = Math.max(...vs);
+              const hRange = hMax - hMin, vRange = vMax - vMin;
+              if (hRange >= GAZE_MIN_RANGE) {
+                hMin -= hRange * GAZE_MARGIN_FRAC; hMax += hRange * GAZE_MARGIN_FRAC;
+                vMin -= Math.max(vRange, GAZE_MIN_RANGE) * GAZE_MARGIN_FRAC;
+                vMax += Math.max(vRange, GAZE_MIN_RANGE) * GAZE_MARGIN_FRAC;
+                gazeBoundsRef.current = { hMin, hMax, vMin, vMax };
+              } else {
+                // User didn't follow the dots — fall back to center-delta mode
+                gazeBoundsRef.current = null;
+              }
+            } else {
+              gazeBoundsRef.current = null;
+            }
+            isCalibratedRef.current = true;
+            toast.info(
+              gazeBoundsRef.current
+                ? "Calibration complete — gaze bounds locked, monitoring active"
+                : "Calibration complete — monitoring active (gaze in fallback mode)",
+            );
+          }
+        }
+        framesDone = CALIB_CENTER_FRAMES + corner * CORNER_FRAMES + cornerFrameRef.current;
       }
 
-      if (calibCountRef.current >= CALIB_FRAMES) {
-        faceARBaselineRef.current = calibFaceARSumRef.current / CALIB_FRAMES;
-        gazeBaselineRef.current   = calibGazeSumRef.current  / CALIB_FRAMES;
-        isCalibratedRef.current   = true;
-        toast.info("Calibration complete — monitoring active");
+      const progress = Math.min(100, Math.round((framesDone / CALIB_TOTAL_FRAMES) * 100));
+      if (now - lastLiveRef.current > LIVE_THROTTLE_MS || calibPhaseRef.current === "corners") {
+        lastLiveRef.current = now;
+        setLiveStatus({
+          ...DEFAULT_LIVE,
+          faceDetected: true,
+          isCalibrating: true,
+          calibProgress: progress,
+          calibStage: calibPhaseRef.current,
+          calibCorner: Math.min(3, calibCornerRef.current),
+        });
       }
       return; // no violation checks during calibration
     }
@@ -497,22 +609,43 @@ export function useProctoring() {
       lookDownFramesRef.current = 0;
     }
 
-    // ── Gaze — delta from baseline, leaky sustained counter ────────────────
+    // ── Gaze — outside the corner-calibrated bounds, leaky counter ─────────
     // Skipped while the head itself is turned: the iris/eye-corner geometry
     // is skewed at high yaw and the head-turn alert already covers it. Gaze
     // specifically catches eyes-only glancing with the head still centered.
     let gazeDir: LiveStatus["gazeDirection"] = "center";
+    let gazeOutPct = 0;
     const headCentered = Math.abs(yaw) <= HEAD_TURN_THRESHOLD;
-    const gazeDelta = gazeValid ? gazeOff - gazeBaselineRef.current : 0;
     if (gazeValid && headCentered) {
-      if (Math.abs(gazeDelta) > GAZE_DELTA) {
+      let out = false;
+      const bounds = gazeBoundsRef.current;
+      if (bounds) {
+        // Primary mode: personal gaze range from the 4-corner calibration.
+        // Outside the box (any direction, incl. vertical) = off-screen.
+        if (gazeOff > bounds.hMax) { out = true; gazeDir = "left"; gazeOutPct = gazeOff - bounds.hMax; }
+        else if (gazeOff < bounds.hMin) { out = true; gazeDir = "right"; gazeOutPct = bounds.hMin - gazeOff; }
+        else if (gazeVOff > bounds.vMax) { out = true; gazeDir = "down"; gazeOutPct = gazeVOff - bounds.vMax; }
+        else if (gazeVOff < bounds.vMin) { out = true; gazeDir = "up"; gazeOutPct = bounds.vMin - gazeVOff; }
+      } else {
+        // Fallback mode: horizontal delta from the center baseline
+        const d = gazeOff - gazeBaselineRef.current;
+        if (Math.abs(d) > GAZE_DELTA) { out = true; gazeDir = d > 0 ? "left" : "right"; gazeOutPct = Math.abs(d) - GAZE_DELTA; }
+      }
+
+      if (out) {
         gazeFramesRef.current++;
-        gazeDir = gazeDelta > 0 ? "left" : "right";
         if (gazeFramesRef.current >= GAZE_SUSTAINED) {
+          // First 2 occurrences log quietly; from the 3rd every one is a
+          // real violation (the user asked for exactly this escalation)
+          gazeEventsRef.current++;
+          const n = gazeEventsRef.current;
+          const escalated = n >= GAZE_ESCALATE_AFTER;
           pushAlertRef.current(
             "gaze_away",
-            `Gaze directed off-screen (looking ${gazeDir}, ${Math.round(Math.abs(gazeDelta) * 100)}% deviation)`,
-            "medium",
+            escalated
+              ? `Gaze off-screen (${gazeDir}) — ${n}th occurrence, repeated off-screen gazing`
+              : `Gaze off-screen (${gazeDir}) — occurrence ${n} of ${GAZE_ESCALATE_AFTER - 1} tolerated`,
+            escalated ? "high" : "low",
           );
           gazeFramesRef.current = 0;
         }
@@ -522,6 +655,7 @@ export function useProctoring() {
         gazeFramesRef.current = Math.max(0, gazeFramesRef.current - GAZE_LEAK);
       }
     }
+    const gazeDelta = gazeOutPct;
 
     // ── Live status update (throttled) ─────────────────────────────────────
     if (now - lastLiveRef.current > LIVE_THROTTLE_MS) {
@@ -540,6 +674,8 @@ export function useProctoring() {
         gazeDelta:   Math.round(Math.abs(gazeDelta) * 100),
         isCalibrating: false,
         calibProgress: 100,
+        calibStage: "corners",
+        calibCorner: 3,
       });
     }
   }, []);
@@ -580,31 +716,49 @@ export function useProctoring() {
 
     isCocoRunningRef.current = true;
     cocoModelRef.current
-      .detect(canvas, 10, PHONE_SCORE_THRESHOLD)
+      .detect(canvas, 10, Math.min(PHONE_SCORE_THRESHOLD, BASELINE_OBJECT_THRESHOLD))
       .then((preds: any[]) => {
+        // During calibration: record the room's baseline objects instead of
+        // alerting — whatever is already in the scene is authorized.
+        if (!isCalibratedRef.current) {
+          preds
+            .filter((p) => p.score >= BASELINE_OBJECT_THRESHOLD && !OBJECT_IGNORE_CLASSES.has(p.class))
+            .forEach((p) => baselineObjectsRef.current.add(p.class));
+          return;
+        }
+
         // COCO frequently labels back-facing phones as "remote" — with the
         // agentic verifier guarding precision, both classes are safe to
-        // treat as phone suspicions at stage 1
+        // treat as phone suspicions at stage 1. Alert on FIRST sight: a
+        // candidate photographing the paper is in and out of frame in ~2 s.
         const phone = preds.find(
           (p) => (p.class === "cell phone" || p.class === "remote") && p.score >= PHONE_SCORE_THRESHOLD,
         );
-        if (phone) {
-          phoneHitsRef.current++;
-          // Confirm across consecutive checks before alerting to keep the
-          // lower score threshold from producing false positives
-          if (phoneHitsRef.current >= PHONE_CONFIRM_HITS) {
-            phoneInFrameRef.current = true;
-            if (isMonitoringRef.current) {
-              pushAlertRef.current(
-                "phone_detected",
-                `Mobile phone detected in frame (${Math.round(phone.score * 100)}% confidence)`,
-                "high",
-              );
-            }
-          }
-        } else {
-          phoneHitsRef.current = 0;
-          phoneInFrameRef.current = false;
+        phoneInFrameRef.current = !!phone;
+        if (phone && isMonitoringRef.current) {
+          pushAlertRef.current(
+            "phone_detected",
+            `Mobile phone detected in frame (${Math.round(phone.score * 100)}% confidence)`,
+            "high",
+          );
+        }
+
+        // Any OTHER class not present at session start → instant flag +
+        // AI verification ("is this an exam-cheating aid?"). One flag per
+        // class per session: after flagging, the class joins the baseline.
+        const novel = preds.find(
+          (p) =>
+            p.score >= NEW_OBJECT_THRESHOLD &&
+            !OBJECT_IGNORE_CLASSES.has(p.class) &&
+            !baselineObjectsRef.current.has(p.class),
+        );
+        if (novel && isMonitoringRef.current) {
+          baselineObjectsRef.current.add(novel.class);
+          pushAlertRef.current(
+            "new_object",
+            `New object appeared in frame: ${novel.class} (${Math.round(novel.score * 100)}% confidence)`,
+            "high",
+          );
         }
       })
       .catch(() => {})
@@ -696,13 +850,21 @@ export function useProctoring() {
       gazeFramesRef.current = 0;
       isCocoRunningRef.current = false;
       phoneInFrameRef.current = false;
-      phoneHitsRef.current = 0;
       activeVerifyRef.current = 0;
+      baselineObjectsRef.current = new Set();
+      calibPhaseRef.current = "center";
       calibCountRef.current = 0;
       calibFaceARSumRef.current = 0;
-      calibGazeSumRef.current = 0;
+      calibGazeHSumRef.current = 0;
+      calibGazeVSumRef.current = 0;
+      calibGazeNRef.current = 0;
+      calibCornerRef.current = 0;
+      cornerFrameRef.current = 0;
+      cornerSumsRef.current = [];
       faceARBaselineRef.current = 0;
       gazeBaselineRef.current = 0;
+      gazeBoundsRef.current = null;
+      gazeEventsRef.current = 0;
       isCalibratedRef.current = false;
       lastLiveRef.current = 0;
       sessionStartRef.current = Date.now();
@@ -747,7 +909,6 @@ export function useProctoring() {
     if (cocoModelRef.current) { try { cocoModelRef.current.dispose(); } catch {} cocoModelRef.current = null; }
     isCocoRunningRef.current = false;
     phoneInFrameRef.current = false;
-    phoneHitsRef.current = 0;
     if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
     if (videoRef.current) videoRef.current.srcObject = null;
 
@@ -806,6 +967,7 @@ export function useProctoring() {
       ["Multiple Faces", s.multipleFaceEvents],
       ["Looking Down Events", s.lookingDownEvents],
       ["Phone Detections", s.phoneDetectedEvents],
+      ["New Objects Detected", s.newObjectEvents],
       ["Tab Switches", s.tabSwitches],
       ["Flags Dismissed by AI Verifier", s.dismissedFlags],
     ].map(r => r.join(",")).join("\n");
