@@ -26,7 +26,7 @@ Inspired by the Real-LOD research workflow (agentic refinement of noisy language
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
-- [Supabase Edge Functions](#supabase-edge-functions)
+- [API Functions](#api-functions)
 - [Evaluation — How We Know It Works](#evaluation--how-we-know-it-works)
 - [Export Reports](#export-reports)
 - [Interview Talking Points](#interview-talking-points)
@@ -52,7 +52,7 @@ The proctoring dashboard applies the same "trust through verification" idea to l
 
 | Model | Type | Where it runs | What we did instead of training |
 |---|---|---|---|
-| **Google Gemini 2.5 Flash** | Vision-language model | Cloud (via Lovable AI Gateway / Google API) | Prompt engineering: adversarial "hallucinate confidently" prompt for stage 1; strict JSON fact-checker + grounded-rewrite prompts at temperature 0–0.2 for stage 2 |
+| **Google Gemini 2.5 Flash** | Vision-language model | Cloud (Google AI API, key held server-side) | Prompt engineering: adversarial "hallucinate confidently" prompt for stage 1; strict JSON fact-checker + grounded-rewrite prompts at temperature 0–0.2 for stage 2 |
 | **MediaPipe Face Mesh** | 468-landmark face model (Google, pretrained) | Browser (WASM, ~30 fps) | Built geometric detectors on top of the landmarks (yaw ratio, face aspect ratio, iris offset) and calibrated per-session baselines |
 | **COCO-SSD (lite_mobilenet_v2)** | Object detector, 80 COCO classes (pretrained) | Browser (TensorFlow.js, WebGL) | Tuned inference pipeline: downscaled input, confidence threshold + multi-hit confirmation, decoupled detection timer |
 
@@ -62,7 +62,7 @@ What *was* tuned, empirically, against real session reports:
 
 - Head-turn yaw threshold `0.33` (raised from 0.25 to cut borderline triggers)
 - Gaze deviation `5%` of eye width with a **leaky counter** (previously 7% + hard reset — which caused sessions to log 0 gaze events; a single frame of iris jitter kept wiping the counter)
-- Phone confidence `0.45` + 2-hit confirmation (previously a single `0.6` gate — the lite model rarely scores phones that high, so detection felt slow/missing)
+- Phone detection `0.35` + 2-hit confirmation on a 512px canvas, with COCO's `remote` class counted as phone suspicion (back-facing phones classify as remotes) — recall over precision is safe because the agentic verifier fact-checks every flag before it penalizes
 - Look-down: 10% face-compression sustained 20 frames; calibration window 90 frames
 
 ---
@@ -80,24 +80,26 @@ What *was* tuned, empirically, against real session reports:
 │        │                        │              ├─ MediaPipe Face Mesh    │
 │        │                        │              │  (rAF loop, ~30 fps)    │
 │        │                        │              ├─ COCO-SSD (700 ms timer,│
-│        │                        │              │  320px canvas, WebGL)   │
+│        │                        │              │  512px canvas, WebGL)   │
 │        │                        │              └─ visibility/blur events │
 │        ▼                        ▼                                        │
 │   invokeAi() ──── VITE_BACKEND switch ────────────────────┐              │
 └───────────┼───────────────────────────────────────────────┼──────────────┘
-            ▼ supabase (default)                            ▼ python (local)
-┌─── Supabase Edge Functions (Deno) ───┐      ┌─── FastAPI server.py ──────┐
-│  generate-caption   refine-caption   │      │  image_refinement.py       │
-│  analyze-video                       │      │  video_refinement.py       │
-└──────────────┬───────────────────────┘      └──────────────┬─────────────┘
+            ▼ /api (default)                                ▼ python (local)
+┌─ Vercel serverless functions ─────────┐     ┌─── FastAPI server.py ──────┐
+│  /api/generate-caption                │     │  image_refinement.py       │
+│  /api/refine-caption                  │     │  video_refinement.py       │
+│  /api/analyze-video  /api/verify-flag │     │  (verify_flag mirror)      │
+└──────────────┬────────────────────────┘     └──────────────┬─────────────┘
                ▼                                             ▼
-     Lovable AI Gateway ──► Google Gemini 2.5 Flash ◄── Google AI API
+        Google Gemini API (your own free GEMINI_API_KEY, server-side only)
 ```
 
 Key properties:
 
-- **Proctoring is 100% client-side** — video frames never leave the browser; only the alert log exists as data. Privacy by architecture, not policy.
-- **Dual backend** — the same UI can hit Supabase Edge Functions (production) or a local Python FastAPI server (development / offline demo) via one env var.
+- **Proctoring detection is 100% client-side** — the video stream never leaves the browser. Only single flagged frames go to the verifier, under an explicit consent toggle.
+- **The backend is just a keyholder** — no database, no auth, no third-party AI gateway. Four small serverless functions exist solely so `GEMINI_API_KEY` never ships to the browser. The app is otherwise fully client-side.
+- **Dual backend** — the same UI hits the Vercel functions in production or a local Python FastAPI server for offline development, via one env var.
 - **Models load from CDN at session start** — no bundle bloat; the app ships ~0 MB of ML weights.
 
 ---
@@ -114,8 +116,8 @@ Key properties:
 - [TensorFlow.js](https://www.tensorflow.org/js) + [COCO-SSD](https://github.com/tensorflow/tfjs-models/tree/master/coco-ssd) `lite_mobilenet_v2` — phone detection (WebGL backend)
 
 **Backend**
-- [Supabase Edge Functions](https://supabase.com/) (Deno) + Lovable AI Gateway → **Google Gemini 2.5 Flash**
-- Alternative: local **Python FastAPI** server calling the Google Generative Language API directly
+- [Vercel serverless functions](https://vercel.com/) (Node) → **Google Gemini 2.5 Flash** via your own `GEMINI_API_KEY` (free at [aistudio.google.com/apikey](https://aistudio.google.com/apikey))
+- Alternative: local **Python FastAPI** server calling the same API
 
 ---
 
@@ -195,7 +197,7 @@ A **10% compression** below baseline sustained **20 frames** (~0.7 s) → `looki
 
 The detectors above are fast but dumb geometry — every proctoring product has them, and their false positives are where real students get hurt. RLVO adds what none of them have: **an adversarial VLM verifier that fact-checks each high-severity flag before it counts.**
 
-Flow, implemented in `useProctoring.ts` + `supabase/functions/verify-flag`:
+Flow, implemented in `useProctoring.ts` + `api/verify-flag.ts`:
 
 1. A verifiable flag fires (`phone_detected`, `multiple_faces`, `no_face`, `looking_down` — visual claims; tab switches aren't visual, head turns are too frequent to verify economically).
 2. The current frame is captured (640px JPEG) as the **evidence exhibit** — the trust penalty is **deferred**.
@@ -224,7 +226,7 @@ Starts at 100. Unverified channels decay immediately per severity: high −6, me
 | `image_refinement.py` | `generate-caption` + `refine-caption` | Same two-pass verify→rewrite loop, Gemini direct API, retry with exponential backoff |
 | `video_refinement.py` | `analyze-video` | OpenCV frame extraction, Summary + Time Capsule modes |
 | `proctoring.py` | `useProctoring.ts` | MediaPipe Face Mesh + YOLOv8n phone detection (desktop-grade equivalent of COCO-SSD) |
-| `server.py` | Supabase functions layer | FastAPI server exposing the same routes, so the React app can run fully local with `VITE_BACKEND=python` |
+| `server.py` | The `/api` functions layer | FastAPI server exposing the same routes, so the React app can run fully local with `VITE_BACKEND=python` |
 
 ```bash
 pip install -r python/requirements.txt        # Python 3.9–3.11 (mediapipe constraint)
@@ -244,8 +246,7 @@ src/
 ├── hooks/
 │   └── useProctoring.ts        # All proctoring logic — MediaPipe, COCO-SSD, alerts, export
 ├── integrations/
-│   ├── aiClient.ts             # invokeAi() — VITE_BACKEND switch (supabase | python)
-│   └── supabase/client.ts      # Supabase client (reads VITE_ env vars)
+│   └── aiClient.ts             # invokeAi() — VITE_BACKEND switch (api | python)
 ├── pages/
 │   ├── Index.tsx               # Landing page
 │   ├── ImageRefinement.tsx     # Caption re-alignment demo
@@ -253,12 +254,15 @@ src/
 │   └── Proctoring.tsx          # Proctoring dashboard
 └── App.tsx                     # Routes
 
-supabase/functions/
-├── generate-caption/index.ts   # Stage 1 — hallucination-rich raw caption
-├── refine-caption/index.ts     # Stage 2 — two-pass agentic re-alignment
-└── analyze-video/index.ts      # Video summary + parallel frame captions
+api/                            # Vercel serverless functions (the keyholder backend)
+├── _gemini.ts                  # Shared Gemini client — retries, data-URL parts, JSON parsing
+├── generate-caption.ts         # Stage 1 — hallucination-rich raw caption
+├── refine-caption.ts           # Stage 2 — two-pass agentic re-alignment
+├── analyze-video.ts            # Video summary + parallel frame captions
+└── verify-flag.ts              # Adversarial verifier for proctoring flags
 
 python/                         # Reference implementation (see above)
+vercel.json                     # SPA rewrites (everything except /api → index.html)
 ```
 
 ---
@@ -267,56 +271,56 @@ python/                         # Reference implementation (see above)
 
 ```bash
 npm install
+
+# Full-stack local dev (frontend + /api functions together):
+npx vercel dev       # → http://localhost:3000
+
+# Frontend-only dev (AI features need the Python backend or a deploy):
 npm run dev          # → http://localhost:8080
+
 npm run build        # production build
 ```
 
-Prerequisites: Node 18+; for the cloud backend, a Supabase project with the three Edge Functions deployed and `LOVABLE_API_KEY` set; or run the Python backend locally instead.
+Prerequisites: Node 18+ and a free `GEMINI_API_KEY` from [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+
+**Deploying (free):**
+
+1. Push to GitHub → import the repo at [vercel.com](https://vercel.com) (framework: Vite, zero config needed — `vercel.json` is included).
+2. In the Vercel project settings, add environment variable `GEMINI_API_KEY`.
+3. Done — frontend and the four `/api` functions deploy together on every push.
 
 ---
 
 ## Environment Variables
 
-`.env` in the project root:
+See `.env.example`. Only one secret exists in the whole system:
 
 ```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
+GEMINI_API_KEY=...        # server-side only (Vercel env / vercel dev) — never VITE_-prefixed
+# GEMINI_MODEL=gemini-2.5-flash-lite   # optional model override
 
-# Optional — switch the AI backend (default: supabase)
-VITE_BACKEND=python
-VITE_PYTHON_API=http://localhost:8000
+# Optional client-side switches:
+# VITE_BACKEND=python                  # use the local FastAPI backend instead of /api
+# VITE_PYTHON_API=http://localhost:8000
 ```
 
-Supabase Edge Function secret (Dashboard → Settings → Edge Functions → Secrets):
-
-```
-LOVABLE_API_KEY=your-lovable-api-key
-```
-
-Python backend: `GEMINI_API_KEY` in the shell environment.
-
-> `.env` is gitignored — secrets never enter version control.
+> `.env` is gitignored — the key never enters version control, and because it has no
+> `VITE_` prefix it can never be bundled into browser JavaScript.
 
 ---
 
-## Supabase Edge Functions
+## API Functions
 
-```bash
-supabase functions deploy generate-caption
-supabase functions deploy refine-caption
-supabase functions deploy analyze-video
-supabase functions deploy verify-flag
-```
+Four serverless functions in `api/` — the entire backend. No database, no auth, no third-party gateway: they exist solely so the Gemini key stays server-side.
 
 | Function | Input | Output |
 |---|---|---|
-| `generate-caption` | `{ image }` (base64 data URL) | `{ caption }` |
-| `refine-caption` | `{ image, rawCaption }` | `{ refinedCaption, logs[], verdicts[], stats }` |
-| `analyze-video` | `{ frames[], mode: "summary" \| "timecapsule" }` | `{ summary }` or `{ captions[] }` |
-| `verify-flag` | `{ frame, flagType, claim }` | `{ verdict: "CONFIRMED" \| "REFUTED" \| "UNCERTAIN", evidence, confidence }` |
+| `POST /api/generate-caption` | `{ image }` (base64 data URL) | `{ caption }` |
+| `POST /api/refine-caption` | `{ image, rawCaption }` | `{ refinedCaption, logs[], verdicts[], stats }` |
+| `POST /api/analyze-video` | `{ frames[], mode: "summary" \| "timecapsule" }` | `{ summary }` or `{ captions[] }` |
+| `POST /api/verify-flag` | `{ frame, flagType, claim }` | `{ verdict: "CONFIRMED" \| "REFUTED" \| "UNCERTAIN", evidence, confidence }` |
 
-All functions send CORS headers and return HTTP 500 with `{ error }` on failure. `refine-caption` degrades to single-pass if the verification JSON fails to parse.
+All return HTTP 500 with `{ error }` on failure; `refine-caption` degrades to single-pass if the verification JSON fails to parse; transient Gemini 429/5xx responses are retried with exponential backoff.
 
 ---
 

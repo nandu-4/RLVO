@@ -25,17 +25,17 @@ pip install -r requirements.txt
 
 ## Set the API key
 
-The image and video scripts call the **Lovable AI Gateway** (Gemini 2.5 Flash).
+The image and video scripts call the **Google Gemini API** directly (free key at https://aistudio.google.com/apikey).
 Set the key in your shell first:
 
 ```powershell
 # Windows PowerShell
-$env:LOVABLE_API_KEY = "your-key-here"
+$env:GEMINI_API_KEY = "your-key-here"
 ```
 
 ```bash
 # Linux/Mac
-export LOVABLE_API_KEY=your-key-here
+export GEMINI_API_KEY=your-key-here
 ```
 
 ---

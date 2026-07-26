@@ -1,7 +1,7 @@
 """
 RLVO - FastAPI server
 ---------------------
-Exposes the same 3 endpoints as the Supabase Edge Functions, backed by the
+Exposes the same endpoints as the Vercel /api functions, backed by the
 Python implementation in image_refinement.py / video_refinement.py.
 
 Endpoints:
@@ -20,7 +20,7 @@ The React app calls this when VITE_BACKEND=python.
 import os
 from pathlib import Path
 
-# Load the parent project's .env so LOVABLE_API_KEY can be defined in one place.
+# Load the parent project's .env so GEMINI_API_KEY can be defined in one place.
 _PROJECT_ENV = Path(__file__).resolve().parent.parent / ".env"
 if _PROJECT_ENV.exists():
     for line in _PROJECT_ENV.read_text(encoding="utf-8").splitlines():
