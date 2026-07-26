@@ -1,9 +1,13 @@
-# RLVO — Agentic Re-alignment for Vision-Language + AI Proctoring
+# RLVO — Verification-First Proctoring & Agentic Vision-Language Re-alignment
 
-RLVO is an AI-powered web application with two halves that share one theme — **making computer vision trustworthy**:
+**One thesis: raw computer-vision output cannot be trusted — in captions or in proctoring — until an agent verifies it against the pixels.**
 
-1. **Vision-language re-alignment** — demonstrates how modern VLM captions hallucinate (invented brands, backstory, emotions) and fixes them with a two-pass **agentic verification loop** that fact-checks every claim against the image before rewriting the caption.
-2. **Real-time exam proctoring** — webcam-based monitoring that detects head turns, off-screen gaze, phone usage, multiple faces, and tab switches — running entirely **in the browser** with no video ever leaving the machine.
+RLVO applies that thesis twice in one codebase:
+
+1. **Verification-first exam proctoring** — a **two-stage** system where cheap real-time detectors (MediaPipe geometry, COCO-SSD) *propose* flags, and an **agentic VLM verifier** *disposes*: every high-severity flag is fact-checked against the captured frame before any trust penalty applies. Refuted flags are dismissed with reasoning; every mark against a candidate carries a visual evidence trail they could appeal. Continuous video never leaves the browser — only single flagged frames are verified, and that layer is an explicit opt-in toggle.
+2. **Vision-language re-alignment** — demonstrates how VLM captions hallucinate (invented brands, backstory, emotions) and fixes them with the same verify-then-rewrite agentic loop, claim by claim.
+
+This attacks the two documented failures of commercial proctoring (Proctorio, ExamSoft, ProctorU): black-box false positives that punish innocent behavior, and full video streams leaving the candidate's machine.
 
 Inspired by the Real-LOD research workflow (agentic refinement of noisy language descriptions for open-vocabulary detection), re-imagined as an interactive web product.
 
@@ -187,9 +191,27 @@ A **10% compression** below baseline sustained **20 frames** (~0.7 s) → `looki
 
 `visibilitychange` (tab switch / minimize) and window `blur` (focus to another app).
 
+### Stage 2 — Agentic Flag Verification (the novel layer)
+
+The detectors above are fast but dumb geometry — every proctoring product has them, and their false positives are where real students get hurt. RLVO adds what none of them have: **an adversarial VLM verifier that fact-checks each high-severity flag before it counts.**
+
+Flow, implemented in `useProctoring.ts` + `supabase/functions/verify-flag`:
+
+1. A verifiable flag fires (`phone_detected`, `multiple_faces`, `no_face`, `looking_down` — visual claims; tab switches aren't visual, head turns are too frequent to verify economically).
+2. The current frame is captured (640px JPEG) as the **evidence exhibit** — the trust penalty is **deferred**.
+3. The frame + the detector's claim go to the verifier, prompted as an *adversarial skeptic* ("detectors are frequently wrong; a wrong CONFIRMED unfairly accuses a real person; confirm only what you clearly see") with per-flag-type questions that encode known false-positive modes (a face in a poster is not a second person; a remote control is not a phone; glancing at the keyboard is not phone use). Temperature 0, strict JSON verdict.
+4. The verdict disposes:
+   - **CONFIRMED** → full trust penalty, evidence reasoning attached
+   - **REFUTED** → **dismissed**: no penalty, struck through in the log, counted in "Dismissed by AI"
+   - **UNCERTAIN** → half penalty
+   - Verifier unreachable → full penalty, marked `unverified` — so blocking the network can never be used to dodge penalties (fail-safe, not fail-open)
+5. The alert log shows the verdict badge, the verifier's reasoning, and the flagged-frame thumbnail. Exports carry the full audit trail.
+
+Privacy trade-off, stated honestly: continuous video never leaves the browser; **single flagged frames** are sent for verification only when the "Agentic flag verification" toggle is on (visible consent control on the dashboard; off = fully offline monitoring with classic immediate penalties).
+
 ### Trust Score
 
-Starts at 100, decays per alert severity: high −6, medium −3, low −1, info 0. Displayed live and included in exports.
+Starts at 100. Unverified channels decay immediately per severity: high −6, medium −3, low −1, info 0. Verified channels decay only on the verifier's verdict: confirmed −6, uncertain −3, dismissed 0.
 
 ---
 
@@ -284,6 +306,7 @@ Python backend: `GEMINI_API_KEY` in the shell environment.
 supabase functions deploy generate-caption
 supabase functions deploy refine-caption
 supabase functions deploy analyze-video
+supabase functions deploy verify-flag
 ```
 
 | Function | Input | Output |
@@ -291,6 +314,7 @@ supabase functions deploy analyze-video
 | `generate-caption` | `{ image }` (base64 data URL) | `{ caption }` |
 | `refine-caption` | `{ image, rawCaption }` | `{ refinedCaption, logs[], verdicts[], stats }` |
 | `analyze-video` | `{ frames[], mode: "summary" \| "timecapsule" }` | `{ summary }` or `{ captions[] }` |
+| `verify-flag` | `{ frame, flagType, claim }` | `{ verdict: "CONFIRMED" \| "REFUTED" \| "UNCERTAIN", evidence, confidence }` |
 
 All functions send CORS headers and return HTTP 500 with `{ error }` on failure. `refine-caption` degrades to single-pass if the verification JSON fails to parse.
 
@@ -301,6 +325,9 @@ All functions send CORS headers and return HTTP 500 with `{ error }` on failure.
 **Caption re-alignment** — claim-level accounting, produced by the system itself:
 - Every refinement run returns `verdicts[]` and `stats { correct, wrong, uncertain }` — i.e., how many claims the raw caption got wrong and what survived verification. Across typical photos, the adversarial stage-1 caption produces a majority of WRONG/UNCERTAIN claims (invented brands, backstory, emotion), and the refined caption retains only visually grounded content — the per-claim log is the audit trail.
 - This mirrors hallucination metrics from the literature (CHAIR-style object hallucination counting), done claim-by-claim rather than object-by-object.
+
+**Flag verification** — measurable false-positive reduction:
+- Every session report now separates *detector proposals* from *verified violations*: the "Dismissed by AI" count is literally the number of false accusations the system prevented. Run a session, hold up a TV remote (classic phone false-positive), and watch the verifier refute it with written reasoning — that demo *is* the evaluation.
 
 **Proctoring** — session reports as ground truth:
 - Every session exports CSV/JSON with per-channel counts. Detection thresholds were tuned against real recorded sessions: e.g., a session that visibly included off-screen glances but logged `Gaze Aways: 0` exposed the hard-reset counter bug; a phone held in frame for seconds before alerting exposed the full-resolution + 0.6-threshold bottleneck. Both fixes are documented in [Did We Train Any Models?](#did-we-train-any-models).
@@ -330,6 +357,9 @@ At session end, **Export CSV** or **Export JSON** downloads the full report: eve
 
 ## Interview Talking Points
 
+- **What's genuinely new:** commercial proctoring stops at stage 1 (raw detectors → raw accusations). RLVO adds stage 2: an adversarial VLM verifier that fact-checks every high-severity flag against the frame before it penalizes, dismisses false positives with written reasoning, and attaches the frame as an appealable evidence exhibit. "Detectors propose, the verifier disposes" — one sentence nobody will confuse with Proctorio.
+- **Fail-safe design:** if the verifier is unreachable, the standard penalty applies — so a candidate can't dodge penalties by blocking the network. Verification can only ever *help* an honest candidate, never a dishonest one.
+- **The privacy trade-off, owned explicitly:** continuous video never leaves the browser; single flagged frames are sent only under a visible consent toggle. Being able to articulate why this is still a radically smaller footprint than streaming everything is itself a talking point.
 - **Problem framing:** VLM hallucination is a *system* problem, not just a model problem — RLVO fixes it with verify-then-rewrite architecture rather than fine-tuning, so the fix is model-agnostic.
 - **Agentic loop:** decompose → verify each claim at temperature 0 → rewrite from verdicts → emit the evidence log. Two LLM calls, deterministic where it matters, graceful degradation when parsing fails.
 - **Why no training:** per-session calibration replaces personalization-by-fine-tuning; pretrained detectors are sufficient when the *pipeline* around them is tuned (downscaling, thresholds, confirmation logic, backend selection).

@@ -15,11 +15,17 @@ import {
   ExternalLink,
   ShieldCheck,
   ShieldAlert,
+  ShieldX,
   Eye,
   User,
   Activity,
   Smartphone,
+  Loader2,
+  BadgeCheck,
+  HelpCircle,
+  Sparkles,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -81,20 +87,79 @@ const SEVERITY_ICON: Record<Severity, string> = {
   high: "text-red-500",
 };
 
+// ─── Verification badge — the verdict of the agentic second stage ─────────────
+
+function VerificationBadge({ alert }: { alert: ProctoringAlert }) {
+  const v = alert.verification;
+  if (!v) return null;
+
+  switch (v.status) {
+    case "pending":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400">
+          <Loader2 className="h-3 w-3 animate-spin" /> AI verifying…
+        </span>
+      );
+    case "confirmed":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600 dark:text-red-400">
+          <BadgeCheck className="h-3 w-3" /> Confirmed by AI verifier
+        </span>
+      );
+    case "dismissed":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400">
+          <ShieldX className="h-3 w-3" /> Dismissed — no penalty
+        </span>
+      );
+    case "uncertain":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-600 dark:text-yellow-400">
+          <HelpCircle className="h-3 w-3" /> Uncertain — reduced penalty
+        </span>
+      );
+    default:
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+          <HelpCircle className="h-3 w-3" /> Unverified
+        </span>
+      );
+  }
+}
+
 function AlertItem({ alert }: { alert: ProctoringAlert }) {
+  const v = alert.verification;
+  const dismissed = v?.status === "dismissed";
   return (
-    <div className={`p-2.5 rounded-lg border text-sm animate-fade-in ${SEVERITY_CARD[alert.severity]}`}>
+    <div className={`p-2.5 rounded-lg border text-sm animate-fade-in ${dismissed ? "border-green-200 dark:border-green-800 bg-green-50/60 dark:bg-green-950/30 opacity-80" : SEVERITY_CARD[alert.severity]}`}>
       <div className="flex items-start gap-2">
-        <span className={`mt-0.5 flex-shrink-0 ${SEVERITY_ICON[alert.severity]}`}>
+        <span className={`mt-0.5 flex-shrink-0 ${dismissed ? "text-green-500" : SEVERITY_ICON[alert.severity]}`}>
           {VIOLATION_ICONS[alert.type]}
         </span>
         <div className="flex-1 min-w-0">
           <span className="font-semibold text-xs uppercase tracking-wide opacity-60">
             {VIOLATION_LABELS[alert.type]}
           </span>
-          <p className="text-xs leading-snug mt-0.5">{alert.message}</p>
+          <p className={`text-xs leading-snug mt-0.5 ${dismissed ? "line-through opacity-70" : ""}`}>{alert.message}</p>
           <p className="text-xs text-muted-foreground mt-0.5">{alert.time}</p>
+          {v && (
+            <div className="mt-1.5 pt-1.5 border-t border-black/5 dark:border-white/10">
+              <VerificationBadge alert={alert} />
+              {v.evidence && v.status !== "pending" && (
+                <p className="text-xs text-muted-foreground italic mt-0.5 leading-snug">
+                  "{v.evidence}"
+                </p>
+              )}
+            </div>
+          )}
         </div>
+        {v?.frame && (
+          <img
+            src={v.frame}
+            alt="Flagged frame evidence"
+            className="w-16 h-12 object-cover rounded border flex-shrink-0 mt-0.5"
+          />
+        )}
       </div>
     </div>
   );
@@ -286,6 +351,8 @@ const Proctoring = () => {
     currentViolation,
     liveStatus,
     videoRef,
+    verifyEnabled,
+    setVerifyEnabled,
     startMonitoring,
     stopMonitoring,
     exportCSV,
@@ -326,10 +393,11 @@ const Proctoring = () => {
         <div className="mb-8 animate-fade-in">
           <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
             <ShieldCheck className="h-9 w-9 text-primary" />
-            Video Proctoring Dashboard
+            Verification-First Proctoring
           </h1>
           <p className="text-muted-foreground">
-            Real-time AI monitoring · head pose · gaze tracking · face detection · tab-switch detection
+            Two-stage AI monitoring — real-time detectors propose, an agentic VLM verifier disposes.
+            Every mark against a candidate carries visual evidence.
           </p>
         </div>
 
@@ -406,6 +474,27 @@ const Proctoring = () => {
                   )}
                 </div>
 
+                {/* Agentic verification consent */}
+                <div className="mt-4 flex items-start justify-between gap-3 p-3 rounded-lg border bg-muted/40">
+                  <div className="flex items-start gap-2 min-w-0">
+                    <Sparkles className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium leading-tight">Agentic flag verification</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+                        High-severity flags are fact-checked by an AI verifier before any trust
+                        penalty applies. Sends the single flagged frame (never the video stream)
+                        to the AI backend. Turn off for fully-offline monitoring.
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={verifyEnabled}
+                    onCheckedChange={setVerifyEnabled}
+                    disabled={isMonitoring}
+                    aria-label="Toggle agentic flag verification"
+                  />
+                </div>
+
                 {/* Controls */}
                 <div className="mt-4 flex flex-wrap gap-2">
                   {!isMonitoring ? (
@@ -461,7 +550,12 @@ const Proctoring = () => {
               <StatCard title="Looking Down" value={stats.lookingDownEvents} warn={stats.lookingDownEvents > 2} />
               <StatCard title="Tab Switches" value={stats.tabSwitches} warn={stats.tabSwitches > 0} />
               <StatCard title="Phone Detected" value={stats.phoneDetectedEvents} warn={stats.phoneDetectedEvents > 0} />
-
+              <StatCard
+                title="Dismissed by AI"
+                value={stats.dismissedFlags}
+                valueClass="text-green-500"
+                sub={<p className="text-xs text-muted-foreground mt-1">false flags, no penalty</p>}
+              />
             </div>
           </div>
 
@@ -516,6 +610,7 @@ const Proctoring = () => {
                   { icon: <UserX className="h-5 w-5" />,    label: "No Face",    desc: "Left frame" },
                   { icon: <Users className="h-5 w-5" />,    label: "Multi-Face", desc: "Extra person" },
                   { icon: <ExternalLink className="h-5 w-5" />, label: "Tab Switch", desc: "Focus loss" },
+                  { icon: <Sparkles className="h-5 w-5" />, label: "AI Verifier", desc: "Fact-checks flags" },
                 ].map(({ icon, label, desc }) => (
                   <div key={label} className="flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/50">
                     <span className="text-primary">{icon}</span>

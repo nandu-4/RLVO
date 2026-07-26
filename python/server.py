@@ -8,6 +8,7 @@ Endpoints:
     POST /generate-caption  { image }                   -> { caption }
     POST /refine-caption    { image, rawCaption }       -> { refinedCaption, logs }
     POST /analyze-video     { frames, mode }            -> { summary } or { captions }
+    POST /verify-flag       { frame, flagType, claim }  -> { verdict, evidence, confidence }
 
 Run:
     pip install -r requirements.txt
@@ -34,7 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Literal
 
-from image_refinement import generate_caption, refine_caption
+from image_refinement import generate_caption, refine_caption, verify_flag
 from video_refinement import summarize_video, caption_per_frame
 
 app = FastAPI(title="RLVO Python Backend")
@@ -63,6 +64,12 @@ class RefineCaptionIn(BaseModel):
 class AnalyzeVideoIn(BaseModel):
     frames: list[str]
     mode: Literal["summary", "timecapsule"]
+
+
+class VerifyFlagIn(BaseModel):
+    frame: str      # flagged frame as data URL
+    flagType: str   # phone_detected | multiple_faces | no_face | looking_down
+    claim: str      # the detector's message
 
 
 # ---------------------------------------------------------------------------
@@ -98,5 +105,15 @@ def post_analyze_video(body: AnalyzeVideoIn):
         if body.mode == "summary":
             return {"summary": summarize_video(body.frames)}
         return {"captions": caption_per_frame(body.frames)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/verify-flag")
+def post_verify_flag(body: VerifyFlagIn):
+    try:
+        return verify_flag(body.frame, body.flagType, body.claim)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

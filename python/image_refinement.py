@@ -239,6 +239,76 @@ def refine_caption(image_data_url: str, raw_caption: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Stage 3 - Agentic flag verification (mirrors verify-flag edge function)
+# Fact-checks a proctoring detector's claim against the flagged frame.
+# ---------------------------------------------------------------------------
+FLAG_QUESTIONS = {
+    "phone_detected": (
+        "Is a mobile phone (or similar handheld device) actually visible anywhere "
+        "in this frame? Reflections, remote controls, wallets, glasses cases, and "
+        "dark rectangular objects that are not phones do NOT count."
+    ),
+    "multiple_faces": (
+        "How many distinct REAL, live human faces are visible in this frame? Faces "
+        "in posters, photos, paintings, or on screens in the background do NOT "
+        "count as real people."
+    ),
+    "no_face": (
+        "Is a live human face visible in this frame? Partially visible or poorly "
+        "lit faces still count as present."
+    ),
+    "looking_down": (
+        "Is the person in this frame looking down toward their lap or desk "
+        "(consistent with reading a phone or notes), rather than at the screen? "
+        "Briefly glancing at a keyboard while typing does NOT count."
+    ),
+}
+
+VERIFIER_SYSTEM = """You are an independent adversarial verifier in an exam-proctoring system. A fast geometric detector raised a flag against a candidate. Detectors are frequently wrong (false positives from lighting, camera angle, ordinary objects, normal behavior). Your job is to fact-check the flag against the actual frame - a wrong CONFIRMED verdict unfairly accuses a real person, so confirm ONLY what you can clearly see.
+
+Answer this question from the frame alone:
+{question}
+
+Reply with ONLY a JSON object, no markdown fences:
+{{"verdict":"CONFIRMED|REFUTED|UNCERTAIN","evidence":"one or two sentences describing exactly what you see that justifies the verdict","confidence":0.0-1.0}}
+
+- CONFIRMED: the frame clearly supports the detector's claim
+- REFUTED: the frame clearly contradicts the claim, or shows an innocent explanation
+- UNCERTAIN: the frame is too blurry/dark/ambiguous to judge either way"""
+
+
+def verify_flag(frame_data_url: str, flag_type: str, claim: str) -> dict:
+    """Fact-check a proctoring flag against its captured frame."""
+    import json
+    question = FLAG_QUESTIONS.get(flag_type)
+    if question is None:
+        raise ValueError(f'Flag type "{flag_type}" is not verifiable from a frame')
+
+    mime, b64 = _split_data_url(frame_data_url)
+    parts = [
+        {"text": f"Detector claim: {claim}"},
+        {"inlineData": {"mimeType": mime, "data": b64}},
+    ]
+    raw = _call_gemini(
+        parts,
+        system_prompt=VERIFIER_SYSTEM.format(question=question),
+        max_tokens=250, temperature=0.0,
+    )
+
+    verdict, evidence, confidence = "UNCERTAIN", "", 0.0
+    try:
+        parsed = json.loads(re.sub(r"```json|```", "", raw).strip())
+        if parsed.get("verdict") in ("CONFIRMED", "REFUTED", "UNCERTAIN"):
+            verdict = parsed["verdict"]
+        evidence = str(parsed.get("evidence", ""))
+        confidence = max(0.0, min(1.0, float(parsed.get("confidence", 0))))
+    except Exception:
+        evidence = raw[:200]  # unparseable output stays UNCERTAIN
+
+    return {"verdict": verdict, "evidence": evidence, "confidence": confidence}
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def run_pipeline(image_path: str) -> None:

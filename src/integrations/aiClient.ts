@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
  *   VITE_BACKEND=python    -> calls VITE_PYTHON_API (default http://localhost:8000)
  */
 
-type FnName = "generate-caption" | "refine-caption" | "analyze-video";
+type FnName = "generate-caption" | "refine-caption" | "analyze-video" | "verify-flag";
 
 const backend = (import.meta.env.VITE_BACKEND ?? "supabase").toLowerCase();
 const pythonBase = import.meta.env.VITE_PYTHON_API ?? "http://localhost:8000";

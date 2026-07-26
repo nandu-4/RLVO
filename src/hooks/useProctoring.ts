@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
+import { invokeAi } from "@/integrations/aiClient";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,23 @@ export type ViolationType =
 
 export type Severity = "info" | "low" | "medium" | "high";
 
+// ── Agentic flag verification ──
+// High-severity flags are fact-checked by a VLM verifier before they
+// penalize the trust score: detectors propose, the verifier disposes.
+export type VerificationStatus =
+  | "pending"     // frame sent, awaiting verdict
+  | "confirmed"   // verifier agrees — full trust penalty applied
+  | "dismissed"   // verifier refuted the flag — no penalty
+  | "uncertain"   // frame ambiguous — reduced penalty
+  | "unverified"; // verifier unavailable — standard penalty (fail-safe)
+
+export interface FlagVerification {
+  status: VerificationStatus;
+  evidence?: string;   // verifier's visual reasoning
+  confidence?: number; // 0-1
+  frame?: string;      // the flagged frame (JPEG data URL) — the evidence exhibit
+}
+
 export interface ProctoringAlert {
   id: string;
   time: string;
@@ -24,6 +42,7 @@ export interface ProctoringAlert {
   type: ViolationType;
   message: string;
   severity: Severity;
+  verification?: FlagVerification;
 }
 
 export interface SessionStats {
@@ -34,6 +53,7 @@ export interface SessionStats {
   lookingDownEvents: number;
   phoneDetectedEvents: number;
   tabSwitches: number;
+  dismissedFlags: number;
 }
 
 export interface LiveStatus {
@@ -101,6 +121,19 @@ const PHONE_DETECT_WIDTH = 320;
 const PHONE_SCORE_THRESHOLD = 0.45;
 const PHONE_CONFIRM_HITS = 2;
 
+// ── Agentic verification ──
+// Flag types whose claim can be fact-checked from a single frame.
+// tab_switch is not visual; head turns / gaze are medium-severity and
+// too frequent to verify economically.
+const VERIFIABLE_TYPES = new Set<ViolationType>([
+  "phone_detected",
+  "multiple_faces",
+  "no_face",
+  "looking_down",
+]);
+const VERIFY_FRAME_WIDTH = 640;   // flagged-frame resolution sent to the verifier
+const MAX_CONCURRENT_VERIFY = 2;  // beyond this, fall back to unverified penalty
+
 const NO_FACE_GRACE_MS = 1500;
 const VIOLATION_BANNER_MS = 3500;
 const LIVE_THROTTLE_MS = 200;
@@ -138,7 +171,7 @@ function downloadBlob(content: string, mimeType: string, filename: string) {
   document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
-const DEFAULT_STATS: SessionStats = { headTurns: 0, gazeAways: 0, noFaceEvents: 0, multipleFaceEvents: 0, lookingDownEvents: 0, phoneDetectedEvents: 0, tabSwitches: 0 };
+const DEFAULT_STATS: SessionStats = { headTurns: 0, gazeAways: 0, noFaceEvents: 0, multipleFaceEvents: 0, lookingDownEvents: 0, phoneDetectedEvents: 0, tabSwitches: 0, dismissedFlags: 0 };
 const DEFAULT_LIVE: LiveStatus = { faceDetected: false, multipleFaces: false, phoneInFrame: false, headDirection: "center", gazeDirection: "center", lookingDown: false, yawPct: 0, faceARDelta: 0, gazeDelta: 0, isCalibrating: false, calibProgress: 0 };
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -152,6 +185,7 @@ export function useProctoring() {
   const [stats, setStats] = useState<SessionStats>({ ...DEFAULT_STATS });
   const [currentViolation, setCurrentViolation] = useState<string | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveStatus>({ ...DEFAULT_LIVE });
+  const [verifyEnabled, setVerifyEnabled] = useState(true);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -194,10 +228,88 @@ export function useProctoring() {
   // Live status throttle
   const lastLiveRef = useRef(0);
 
+  // Agentic verification
+  const verifyEnabledRef = useRef(true);
+  const activeVerifyRef = useRef(0);
+
   useEffect(() => { alertsRef.current = alerts; }, [alerts]);
   useEffect(() => { statsRef.current = stats; }, [stats]);
+  useEffect(() => { verifyEnabledRef.current = verifyEnabled; }, [verifyEnabled]);
 
-  // ─── Alert emitter ────────────────────────────────────────────────────────
+  // ─── Alert emitter + agentic verification ─────────────────────────────────
+
+  const TRUST_DECAY: Record<Severity, number> = { info: 0, low: 1, medium: 3, high: 6 };
+
+  const applyTrustDecay = useCallback((amount: number) => {
+    trustRef.current = Math.max(0, trustRef.current - amount);
+    setTrustScore(trustRef.current);
+  }, []);
+
+  // Capture the current webcam frame as a downscaled JPEG — the "exhibit"
+  // that gets fact-checked and attached to the alert as evidence.
+  const captureFrame = useCallback((): string | null => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) return null;
+    try {
+      const canvas = document.createElement("canvas");
+      const scale = VERIFY_FRAME_WIDTH / (video.videoWidth || 1280);
+      canvas.width = VERIFY_FRAME_WIDTH;
+      canvas.height = Math.round((video.videoHeight || 720) * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.7);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const updateAlertVerification = useCallback((alertId: string, patch: Partial<FlagVerification>) => {
+    setAlerts((prev) =>
+      prev.map((a) =>
+        a.id === alertId && a.verification
+          ? { ...a, verification: { ...a.verification, ...patch } }
+          : a,
+      ),
+    );
+  }, []);
+
+  // Second stage: the VLM verifier fact-checks the detector's claim against
+  // the flagged frame. Only its verdict decides the trust penalty:
+  //   CONFIRMED → full penalty · UNCERTAIN → half · REFUTED → none (dismissed)
+  //   verifier unreachable → full penalty, marked "unverified" (fail-safe)
+  const verifyFlag = useCallback(async (alertId: string, type: ViolationType, claim: string, frame: string, severity: Severity) => {
+    activeVerifyRef.current++;
+    try {
+      const { data, error } = await invokeAi<{ verdict: string; evidence: string; confidence: number }>(
+        "verify-flag",
+        { frame, flagType: type, claim },
+      );
+      if (error || !data?.verdict) throw error ?? new Error("No verdict");
+
+      if (data.verdict === "CONFIRMED") {
+        applyTrustDecay(TRUST_DECAY[severity]);
+        updateAlertVerification(alertId, { status: "confirmed", evidence: data.evidence, confidence: data.confidence });
+      } else if (data.verdict === "REFUTED") {
+        setStats((prev) => ({ ...prev, dismissedFlags: prev.dismissedFlags + 1 }));
+        updateAlertVerification(alertId, { status: "dismissed", evidence: data.evidence, confidence: data.confidence });
+        toast.success("Flag dismissed by AI verifier — no penalty applied");
+      } else {
+        applyTrustDecay(Math.ceil(TRUST_DECAY[severity] / 2));
+        updateAlertVerification(alertId, { status: "uncertain", evidence: data.evidence, confidence: data.confidence });
+      }
+    } catch {
+      // Verifier unreachable — apply the standard penalty so verification
+      // can never be gamed by blocking the network
+      applyTrustDecay(TRUST_DECAY[severity]);
+      updateAlertVerification(alertId, { status: "unverified", evidence: "Verifier unavailable — standard penalty applied" });
+    } finally {
+      activeVerifyRef.current--;
+    }
+  }, [applyTrustDecay, updateAlertVerification]);
+
+  const verifyFlagRef = useRef(verifyFlag);
+  useEffect(() => { verifyFlagRef.current = verifyFlag; }, [verifyFlag]);
 
   const pushAlert = useCallback((type: ViolationType, message: string, severity: Severity) => {
     const now = Date.now();
@@ -206,7 +318,19 @@ export function useProctoring() {
     if (cooldown > 0 && now - last < cooldown) return;
     lastAlertRef.current[type] = now;
 
-    const alert: ProctoringAlert = { id: uid(), time: timeLabel(), timestamp: now, type, message, severity };
+    // First stage (detector) proposes; decide whether the second stage
+    // (VLM verifier) gets to dispose before any trust penalty applies
+    const wantsVerify =
+      verifyEnabledRef.current &&
+      VERIFIABLE_TYPES.has(type) &&
+      activeVerifyRef.current < MAX_CONCURRENT_VERIFY;
+    const frame = wantsVerify ? captureFrame() : null;
+    const willVerify = wantsVerify && !!frame;
+
+    const alert: ProctoringAlert = {
+      id: uid(), time: timeLabel(), timestamp: now, type, message, severity,
+      ...(willVerify ? { verification: { status: "pending" as VerificationStatus, frame: frame! } } : {}),
+    };
     setAlerts((prev) => [alert, ...prev].slice(0, 60));
 
     setStats((prev) => {
@@ -221,20 +345,23 @@ export function useProctoring() {
       return next;
     });
 
-    const decay: Record<Severity, number> = { info: 0, low: 1, medium: 3, high: 6 };
-    trustRef.current = Math.max(0, trustRef.current - decay[severity]);
-    setTrustScore(trustRef.current);
+    if (willVerify) {
+      // Trust decay is DEFERRED until the verifier's verdict
+      verifyFlagRef.current(alert.id, type, message, frame!, severity);
+    } else {
+      applyTrustDecay(TRUST_DECAY[severity]);
+    }
 
     if (severity !== "info") {
       hasViolationRef.current = true;
-      setCurrentViolation(message);
+      setCurrentViolation(willVerify ? `${message} — verifying…` : message);
       if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
       bannerTimerRef.current = setTimeout(() => {
         hasViolationRef.current = false;
         setCurrentViolation(null);
       }, VIOLATION_BANNER_MS);
     }
-  }, []);
+  }, [applyTrustDecay, captureFrame]);
 
   const pushAlertRef = useRef(pushAlert);
   useEffect(() => { pushAlertRef.current = pushAlert; }, [pushAlert]);
@@ -543,6 +670,7 @@ export function useProctoring() {
       isCocoRunningRef.current = false;
       phoneInFrameRef.current = false;
       phoneHitsRef.current = 0;
+      activeVerifyRef.current = 0;
       calibCountRef.current = 0;
       calibFaceARSumRef.current = 0;
       calibGazeSumRef.current = 0;
@@ -635,8 +763,12 @@ export function useProctoring() {
   const exportCSV = useCallback(() => {
     const s = statsRef.current;
     const rows = [
-      ["Timestamp", "Time", "Type", "Message", "Severity"],
-      ...alertsRef.current.map(a => [a.timestamp, a.time, a.type, `"${a.message}"`, a.severity]),
+      ["Timestamp", "Time", "Type", "Message", "Severity", "Verification", "Evidence"],
+      ...alertsRef.current.map(a => [
+        a.timestamp, a.time, a.type, `"${a.message}"`, a.severity,
+        a.verification?.status ?? "",
+        a.verification?.evidence ? `"${a.verification.evidence.replace(/"/g, "'")}"` : "",
+      ]),
       [],
       ["=== SESSION SUMMARY ==="],
       ["Trust Score", `${trustRef.current}%`],
@@ -648,6 +780,7 @@ export function useProctoring() {
       ["Looking Down Events", s.lookingDownEvents],
       ["Phone Detections", s.phoneDetectedEvents],
       ["Tab Switches", s.tabSwitches],
+      ["Flags Dismissed by AI Verifier", s.dismissedFlags],
     ].map(r => r.join(",")).join("\n");
     downloadBlob(rows, "text/csv;charset=utf-8;", `proctor-${isoTimestamp()}.csv`);
     toast.success("CSV report downloaded");
@@ -659,7 +792,10 @@ export function useProctoring() {
       sessionStart: sessionStartRef.current ? new Date(sessionStartRef.current).toISOString() : null,
       durationSeconds: sessionSecondsRef.current,
       trustScore: trustRef.current,
+      verificationEnabled: verifyEnabledRef.current,
       stats: statsRef.current,
+      // Full audit trail: each verified alert carries the verifier's verdict,
+      // reasoning, and the flagged frame itself as the evidence exhibit
       alerts: alertsRef.current,
     };
     downloadBlob(JSON.stringify(payload, null, 2), "application/json", `proctor-${isoTimestamp()}.json`);
@@ -669,6 +805,7 @@ export function useProctoring() {
   return {
     isMonitoring, isLoading, alerts, sessionTime, trustScore,
     stats, currentViolation, liveStatus, videoRef,
+    verifyEnabled, setVerifyEnabled,
     startMonitoring, stopMonitoring, exportCSV, exportJSON,
   };
 }
