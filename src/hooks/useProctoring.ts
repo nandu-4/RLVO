@@ -582,8 +582,11 @@ export function useProctoring() {
     cocoModelRef.current
       .detect(canvas, 10, PHONE_SCORE_THRESHOLD)
       .then((preds: any[]) => {
+        // COCO frequently labels back-facing phones as "remote" — with the
+        // agentic verifier guarding precision, both classes are safe to
+        // treat as phone suspicions at stage 1
         const phone = preds.find(
-          (p) => p.class === "cell phone" && p.score >= PHONE_SCORE_THRESHOLD,
+          (p) => (p.class === "cell phone" || p.class === "remote") && p.score >= PHONE_SCORE_THRESHOLD,
         );
         if (phone) {
           phoneHitsRef.current++;
