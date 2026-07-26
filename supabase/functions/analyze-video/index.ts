@@ -48,13 +48,14 @@ serve(async (req) => {
               content: [
                 {
                   type: 'text',
-                  text: 'These are key frames from a video shown in chronological order. Analyze them and provide a concise summary (2-3 sentences) describing the main events, actions, and subjects in the video. Focus on what actually happens, avoiding hallucinations.'
+                  text: 'These are key frames from a video shown in chronological order. Provide a concise summary (2-3 sentences) describing the main events, actions, and subjects. Ground every statement in what is visible across the frames: do not invent names, brands, sounds, dialogue, or events between frames; do not use hedging words ("appears", "seems", "possibly"). If the frames do not show something clearly, leave it out entirely.'
                 },
                 ...imageContents
               ]
             }
           ],
-          max_tokens: 200
+          max_tokens: 200,
+          temperature: 0.2
         }),
       });
 
@@ -75,48 +76,50 @@ serve(async (req) => {
       );
 
     } else {
-      const captions: string[] = [];
+      // Caption all frames concurrently — sequential requests made Time
+      // Capsule mode take frames×latency; parallel takes ~1×latency.
+      console.log(`Captioning ${frames.length} frames in parallel...`);
 
-      for (let i = 0; i < frames.length; i++) {
-        console.log(`Processing frame ${i + 1}/${frames.length}...`);
+      const captions = await Promise.all(
+        frames.map(async (frame: string, i: number) => {
+          const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'google/gemini-2.5-flash',
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'text',
+                      text: 'Describe this video frame in one concise sentence. State only the main action, subject, and visible elements. Do not invent names, brands, or context outside the frame, and do not hedge with "appears" or "seems".'
+                    },
+                    {
+                      type: 'image_url',
+                      image_url: { url: frame }
+                    }
+                  ]
+                }
+              ],
+              max_tokens: 100,
+              temperature: 0.2
+            }),
+          });
 
-        const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-2.5-flash',
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  {
-                    type: 'text',
-                    text: 'Describe this video frame in one concise sentence. Focus on the main action, subject, and visible elements. Be accurate and avoid hallucinations.'
-                  },
-                  {
-                    type: 'image_url',
-                    image_url: { url: frames[i] }
-                  }
-                ]
-              }
-            ],
-            max_tokens: 100
-          }),
-        });
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`AI gateway error on frame ${i + 1}:`, response.status, errorText);
+            throw new Error(`AI gateway error: ${response.status}`);
+          }
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('AI gateway error:', response.status, errorText);
-          throw new Error(`AI gateway error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const caption = data.choices[0].message.content;
-        captions.push(caption);
-      }
+          const data = await response.json();
+          return data.choices[0].message.content as string;
+        })
+      );
 
       console.log('All frame captions generated');
 

@@ -59,7 +59,7 @@ const ALERT_COOLDOWN: Record<ViolationType, number> = {
   gaze_away: 2000,
   no_face: 2000,
   multiple_faces: 3000,
-  phone_detected: 5000,
+  phone_detected: 4000,
   tab_switch: 5000,
   session_start: 0,
   session_end: 0,
@@ -82,10 +82,24 @@ const LOOK_DOWN_SUSTAINED = 20;
 
 // Gaze (iris offset from eye-centre, normalised by eye-width) must deviate
 // this much from the calibrated baseline to trigger an alert
-const GAZE_DELTA = 0.07;
+const GAZE_DELTA = 0.05;
 
-// Consecutive frames gaze must stay deviated before alerting (~0.33 s)
+// Leaky-counter score gaze must accumulate before alerting (~0.4 s of
+// deviation; centered frames drain the score instead of hard-resetting it,
+// so single-frame iris jitter no longer wipes out a sustained glance)
 const GAZE_SUSTAINED = 10;
+const GAZE_LEAK = 2;
+
+// ── Phone detection ──
+// COCO-SSD inference runs on its own timer (decoupled from the FaceMesh rAF
+// loop) against a downscaled canvas — full-resolution 1280x720 inference on
+// the main thread was the bottleneck that made detection feel slow.
+const PHONE_CHECK_MS = 700;
+const PHONE_DETECT_WIDTH = 320;
+// lite_mobilenet_v2 rarely scores phones above 0.6; 0.45 with a 2-hit
+// confirmation catches phones far sooner without adding false positives.
+const PHONE_SCORE_THRESHOLD = 0.45;
+const PHONE_CONFIRM_HITS = 2;
 
 const NO_FACE_GRACE_MS = 1500;
 const VIOLATION_BANNER_MS = 3500;
@@ -163,9 +177,11 @@ export function useProctoring() {
 
   // COCO-SSD phone detection
   const cocoModelRef = useRef<any>(null);
-  const phoneFrameCountRef = useRef(0);
+  const phoneTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const phoneCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const isCocoRunningRef = useRef(false);
   const phoneInFrameRef = useRef(false);
+  const phoneHitsRef = useRef(0);
 
   // Calibration
   const calibCountRef = useRef(0);
@@ -347,22 +363,29 @@ export function useProctoring() {
       lookDownFramesRef.current = 0;
     }
 
-    // ── Gaze — delta from baseline, sustained ──────────────────────────────
+    // ── Gaze — delta from baseline, leaky sustained counter ────────────────
+    // Skipped while the head itself is turned: the iris/eye-corner geometry
+    // is skewed at high yaw and the head-turn alert already covers it. Gaze
+    // specifically catches eyes-only glancing with the head still centered.
     let gazeDir: LiveStatus["gazeDirection"] = "center";
+    const headCentered = Math.abs(yaw) <= HEAD_TURN_THRESHOLD;
     const gazeDelta = gazeValid ? gazeOff - gazeBaselineRef.current : 0;
-    if (gazeValid) {
+    if (gazeValid && headCentered) {
       if (Math.abs(gazeDelta) > GAZE_DELTA) {
         gazeFramesRef.current++;
         gazeDir = gazeDelta > 0 ? "left" : "right";
-        if (gazeFramesRef.current === GAZE_SUSTAINED) {
+        if (gazeFramesRef.current >= GAZE_SUSTAINED) {
           pushAlertRef.current(
             "gaze_away",
-            `Gaze directed off-screen (looking ${gazeDir})`,
+            `Gaze directed off-screen (looking ${gazeDir}, ${Math.round(Math.abs(gazeDelta) * 100)}% deviation)`,
             "medium",
           );
+          gazeFramesRef.current = 0;
         }
       } else {
-        gazeFramesRef.current = 0;
+        // Drain instead of hard reset — one jittery frame no longer erases
+        // an otherwise-sustained off-screen glance
+        gazeFramesRef.current = Math.max(0, gazeFramesRef.current - GAZE_LEAK);
       }
     }
 
@@ -397,40 +420,62 @@ export function useProctoring() {
     const video = videoRef.current;
     if (video.readyState >= 2 && !video.paused) {
       try { await faceMeshRef.current.send({ image: video }); } catch { /* skip frame */ }
-
-      // ── COCO-SSD phone detection every 10th frame ──────────────────────
-      phoneFrameCountRef.current++;
-      if (
-        phoneFrameCountRef.current % 10 === 0 &&
-        cocoModelRef.current &&
-        !isCocoRunningRef.current
-      ) {
-        isCocoRunningRef.current = true;
-        cocoModelRef.current
-          .detect(video)
-          .then((preds: any[]) => {
-            const phone = preds.find(
-              (p) => p.class === "cell phone" && p.score > 0.6,
-            );
-            const detected = !!phone;
-            phoneInFrameRef.current = detected;
-            if (detected && isMonitoringRef.current) {
-              pushAlertRef.current(
-                "phone_detected",
-                `Mobile phone detected in frame (${Math.round(phone.score * 100)}% confidence)`,
-                "high",
-              );
-            }
-          })
-          .catch(() => {})
-          .finally(() => { isCocoRunningRef.current = false; });
-      }
     }
     if (isMonitoringRef.current) rafRef.current = requestAnimationFrame(loopRef.current);
   }, []);
 
   const loopRef = useRef(loop);
   useEffect(() => { loopRef.current = loop; }, [loop]);
+
+  // ── COCO-SSD phone check: own timer, downscaled input ─────────────────────
+  // Runs independently of the FaceMesh loop so FaceMesh latency never delays
+  // it, and infers on a small canvas instead of the full 1280x720 frame.
+  const checkPhone = useCallback(() => {
+    const video = videoRef.current;
+    if (!isMonitoringRef.current || !cocoModelRef.current || !video) return;
+    if (video.readyState < 2 || video.paused || isCocoRunningRef.current) return;
+
+    if (!phoneCanvasRef.current) phoneCanvasRef.current = document.createElement("canvas");
+    const canvas = phoneCanvasRef.current;
+    const scale = PHONE_DETECT_WIDTH / (video.videoWidth || 1280);
+    canvas.width = PHONE_DETECT_WIDTH;
+    canvas.height = Math.round((video.videoHeight || 720) * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    isCocoRunningRef.current = true;
+    cocoModelRef.current
+      .detect(canvas, 5, PHONE_SCORE_THRESHOLD)
+      .then((preds: any[]) => {
+        const phone = preds.find(
+          (p) => p.class === "cell phone" && p.score >= PHONE_SCORE_THRESHOLD,
+        );
+        if (phone) {
+          phoneHitsRef.current++;
+          // Confirm across consecutive checks before alerting to keep the
+          // lower score threshold from producing false positives
+          if (phoneHitsRef.current >= PHONE_CONFIRM_HITS) {
+            phoneInFrameRef.current = true;
+            if (isMonitoringRef.current) {
+              pushAlertRef.current(
+                "phone_detected",
+                `Mobile phone detected in frame (${Math.round(phone.score * 100)}% confidence)`,
+                "high",
+              );
+            }
+          }
+        } else {
+          phoneHitsRef.current = 0;
+          phoneInFrameRef.current = false;
+        }
+      })
+      .catch(() => {})
+      .finally(() => { isCocoRunningRef.current = false; });
+  }, []);
+
+  const checkPhoneRef = useRef(checkPhone);
+  useEffect(() => { checkPhoneRef.current = checkPhone; }, [checkPhone]);
 
   // ─── Start ────────────────────────────────────────────────────────────────
 
@@ -469,9 +514,20 @@ export function useProctoring() {
       try {
         await loadCdnScript(TF_CDN);
         await loadCdnScript(COCO_CDN);
+        const tf = (window as any).tf;
+        // GPU-accelerated inference; without this TF.js can fall back to the
+        // much slower CPU backend and every detect blocks the main thread
+        if (tf?.setBackend) { try { await tf.setBackend("webgl"); await tf.ready(); } catch {} }
         const cocoSsd = (window as any).cocoSsd;
         if (cocoSsd?.load) {
           cocoModelRef.current = await cocoSsd.load({ base: "lite_mobilenet_v2" });
+          // Warm-up inference — first detect compiles WebGL shaders (~1-2 s);
+          // doing it now means the first real phone check is already fast
+          try {
+            const warm = document.createElement("canvas");
+            warm.width = PHONE_DETECT_WIDTH; warm.height = 240;
+            await cocoModelRef.current.detect(warm);
+          } catch {}
         }
       } catch {
         // Phone object detection unavailable — faceAR tilt detection still works
@@ -484,9 +540,9 @@ export function useProctoring() {
       hasViolationRef.current = false;
       lookDownFramesRef.current = 0;
       gazeFramesRef.current = 0;
-      phoneFrameCountRef.current = 0;
       isCocoRunningRef.current = false;
       phoneInFrameRef.current = false;
+      phoneHitsRef.current = 0;
       calibCountRef.current = 0;
       calibFaceARSumRef.current = 0;
       calibGazeSumRef.current = 0;
@@ -514,6 +570,8 @@ export function useProctoring() {
         setSessionTime(sessionSecondsRef.current);
       }, 1000);
 
+      phoneTimerRef.current = setInterval(() => checkPhoneRef.current(), PHONE_CHECK_MS);
+
       rafRef.current = requestAnimationFrame(() => loopRef.current());
     } catch (err: any) {
       toast.error("Failed to start: " + (err?.message ?? "Camera access denied"));
@@ -529,10 +587,12 @@ export function useProctoring() {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     if (sessionTimerRef.current) { clearInterval(sessionTimerRef.current); sessionTimerRef.current = null; }
     if (bannerTimerRef.current) { clearTimeout(bannerTimerRef.current); bannerTimerRef.current = null; }
+    if (phoneTimerRef.current) { clearInterval(phoneTimerRef.current); phoneTimerRef.current = null; }
     if (faceMeshRef.current) { try { faceMeshRef.current.close(); } catch {} faceMeshRef.current = null; }
     if (cocoModelRef.current) { try { cocoModelRef.current.dispose(); } catch {} cocoModelRef.current = null; }
     isCocoRunningRef.current = false;
     phoneInFrameRef.current = false;
+    phoneHitsRef.current = 0;
     if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
     if (videoRef.current) videoRef.current.srcObject = null;
 
@@ -586,6 +646,7 @@ export function useProctoring() {
       ["No Face Events", s.noFaceEvents],
       ["Multiple Faces", s.multipleFaceEvents],
       ["Looking Down Events", s.lookingDownEvents],
+      ["Phone Detections", s.phoneDetectedEvents],
       ["Tab Switches", s.tabSwitches],
     ].map(r => r.join(",")).join("\n");
     downloadBlob(rows, "text/csv;charset=utf-8;", `proctor-${isoTimestamp()}.csv`);

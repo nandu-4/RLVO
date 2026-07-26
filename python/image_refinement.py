@@ -139,16 +139,67 @@ def generate_caption(image_data_url: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Stage 2 - Agentic re-alignment (mirrors refine-caption edge function)
+# Two-pass loop: VERIFY (decompose into atomic claims, judge each against the
+# image at temperature 0) then REWRITE (compose final caption from verdicts).
 # ---------------------------------------------------------------------------
-SYSTEM_PROMPT = """You re-write image captions to remove hallucinations. The user gives you a raw caption that may contain mistakes in any of these six aspects: object category, attribute (color/shape/material/texture), accessory items, spatial relation, location in frame, or behavior/action.
+VERIFY_PROMPT = """You are a strict visual fact-checker. The user gives you a caption and the image it claims to describe. Decompose the caption into atomic claims and verify EACH claim against the image only - never against what is plausible or typical.
 
-For every claim in the raw caption, silently check it against the image. Drop claims that are wrong. Correct claims that are partially wrong using what you can actually see. Keep claims that are correct. Do not add new speculation or hedging language ("appears to be", "seems like", "evokes").
+Classify every claim into one aspect: category, attribute, accessory, relation, location, or behavior.
 
-Your reply MUST be ONLY the final corrected caption as a single flowing paragraph of 3-5 sentences. Do not write headings. Do not write the words "PLANNING", "TOOL USE", "REFLECTION", "CORRECT", "WRONG", or "UNCERTAIN" anywhere in your response. Do not list claims. Do not prefix with "Refined caption:" or "Final:". Just write the paragraph."""
+Give every claim a verdict:
+- CORRECT: clearly visible in the image
+- WRONG: contradicted by the image, or asserts something not visible (invented brands, backstory, emotions, events outside the frame are always WRONG)
+- UNCERTAIN: partially right; provide the corrected version of the claim using only what is visible
+
+Reply with ONLY a JSON array, no markdown fences, in this exact shape:
+[{"claim":"...","aspect":"...","verdict":"CORRECT|WRONG|UNCERTAIN","correction":"corrected claim, or empty string"}]"""
+
+REWRITE_PROMPT = """You re-write image captions to remove hallucinations. {verdict_context}
+
+Do not add new speculation, invented brands, backstory, or hedging language ("appears to be", "seems like", "evokes"). Every sentence must be grounded in what is visible.
+
+Your reply MUST be ONLY the final corrected caption as a single flowing paragraph of 3-5 sentences. No headings, no lists, no prefix like "Refined caption:". Just the paragraph."""
+
+
+def _verify_claims(mime: str, b64: str, raw_caption: str) -> list[dict]:
+    """Pass 1: decompose the caption into claims and judge each one."""
+    import json
+    parts = [
+        {"text": f'Caption to fact-check:\n"{raw_caption}"'},
+        {"inlineData": {"mimeType": mime, "data": b64}},
+    ]
+    try:
+        raw = _call_gemini(parts, system_prompt=VERIFY_PROMPT,
+                           max_tokens=1200, temperature=0.0)
+        cleaned = re.sub(r"```json|```", "", raw).strip()
+        verdicts = json.loads(cleaned)
+        return verdicts if isinstance(verdicts, list) else []
+    except Exception as e:  # fall back to single-pass rewrite
+        print(f"[verify pass failed, falling back to single-pass] {e}", flush=True)
+        return []
 
 
 def refine_caption(image_data_url: str, raw_caption: str) -> dict:
+    import json
     mime, b64 = _split_data_url(image_data_url)
+
+    # Pass 1: verify
+    verdicts = _verify_claims(mime, b64, raw_caption)
+
+    # Pass 2: rewrite from verdicts
+    if verdicts:
+        verdict_context = (
+            "A visual fact-checker already verified every claim:\n"
+            + json.dumps(verdicts)
+            + "\n\nWrite the final caption using ONLY claims marked CORRECT and "
+            "the corrections of UNCERTAIN claims. Discard everything marked WRONG."
+        )
+    else:
+        verdict_context = (
+            "Silently verify every claim in the raw caption against the image. "
+            "Drop wrong claims, correct partially-wrong ones, keep correct ones."
+        )
+
     user_prompt = (
         f'Raw caption to re-align:\n"{raw_caption}"\n\n'
         "Output the corrected caption as a single paragraph. Nothing else."
@@ -158,17 +209,33 @@ def refine_caption(image_data_url: str, raw_caption: str) -> dict:
         {"inlineData": {"mimeType": mime, "data": b64}},
     ]
     refined = _call_gemini(
-        parts, system_prompt=SYSTEM_PROMPT, max_tokens=400, temperature=0.2
+        parts,
+        system_prompt=REWRITE_PROMPT.format(verdict_context=verdict_context),
+        max_tokens=400, temperature=0.2,
     )
-    return {
-        "refinedCaption": refined,
-        "logs": [
+
+    # Real evidence log built from the actual verification pass
+    if verdicts:
+        marks = {"CORRECT": "[OK]", "WRONG": "[X]", "UNCERTAIN": "[~]"}
+        n_ok = sum(v.get("verdict") == "CORRECT" for v in verdicts)
+        n_wrong = sum(v.get("verdict") == "WRONG" for v in verdicts)
+        n_unc = sum(v.get("verdict") == "UNCERTAIN" for v in verdicts)
+        logs = [f"Planning: Decomposed caption into {len(verdicts)} atomic claims across 6 aspects"]
+        for v in verdicts:
+            mark = marks.get(v.get("verdict", ""), "[?]")
+            fix = f" -> {v['correction']}" if v.get("correction") and v.get("verdict") != "CORRECT" else ""
+            logs.append(f"{mark} {v.get('verdict')} ({v.get('aspect')}): \"{v.get('claim')}\"{fix}")
+        logs.append(f"Reflection: kept {n_ok}, dropped {n_wrong}, corrected {n_unc}")
+        logs.append("Complete: Re-aligned caption grounded in visual evidence")
+    else:
+        logs = [
             "Planning: Tagging each claim by aspect (category / attribute / accessory / relation / location / behavior)",
             "Tool Use: Visually verifying each tagged claim against the image",
             "Reflection: Dropping WRONG claims, correcting UNCERTAIN ones, keeping CORRECT ones",
             "Complete: Re-aligned caption grounded in visual evidence",
-        ],
-    }
+        ]
+
+    return {"refinedCaption": refined, "logs": logs, "verdicts": verdicts}
 
 
 # ---------------------------------------------------------------------------

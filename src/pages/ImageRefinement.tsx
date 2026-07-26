@@ -57,19 +57,21 @@ const ImageRefinement = () => {
 
       if (error || !data) throw error ?? new Error("No data");
 
-      // Add processing logs
+      // Add processing logs — adaptive stagger so long per-claim evidence
+      // logs from the verification pass don't delay the final caption
+      const step = data.logs.length > 8 ? 150 : 400;
       data.logs.forEach((log: string, index: number) => {
         setTimeout(() => {
           setRefinementLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${log}`]);
-        }, index * 400);
+        }, index * step);
       });
-      
+
       // Set refined caption after logs
       setTimeout(() => {
         setRefinedCaption(data.refinedCaption);
         setIsRefining(false);
         toast.success("Caption refined with AI!");
-      }, data.logs.length * 400 + 200);
+      }, data.logs.length * step + 200);
       
     } catch (error) {
       console.error('Error refining caption:', error);
