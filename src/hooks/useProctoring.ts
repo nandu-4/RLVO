@@ -115,10 +115,14 @@ const GAZE_LEAK = 2;
 // loop) against a downscaled canvas — full-resolution 1280x720 inference on
 // the main thread was the bottleneck that made detection feel slow.
 const PHONE_CHECK_MS = 700;
-const PHONE_DETECT_WIDTH = 320;
-// lite_mobilenet_v2 rarely scores phones above 0.6; 0.45 with a 2-hit
-// confirmation catches phones far sooner without adding false positives.
-const PHONE_SCORE_THRESHOLD = 0.45;
+// 512px keeps inference fast while leaving a hand-held phone ~100px tall —
+// at 320px a phone shrinks below what lite_mobilenet_v2 can recognize,
+// especially back-facing against a dark background.
+const PHONE_DETECT_WIDTH = 512;
+// Recall over precision at stage 1: the agentic verifier fact-checks the
+// frame before any penalty, so a trigger-happy detector costs nothing but
+// a verification call, while a conservative one misses real phones.
+const PHONE_SCORE_THRESHOLD = 0.35;
 const PHONE_CONFIRM_HITS = 2;
 
 // ── Agentic verification ──
@@ -186,6 +190,9 @@ export function useProctoring() {
   const [currentViolation, setCurrentViolation] = useState<string | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveStatus>({ ...DEFAULT_LIVE });
   const [verifyEnabled, setVerifyEnabled] = useState(true);
+  // "loading" until COCO-SSD is ready; "unavailable" if the CDN/model was
+  // blocked (ad-blockers, Brave Shields) — surfaced in the UI, never silent
+  const [phoneDetectorStatus, setPhoneDetectorStatus] = useState<"loading" | "ready" | "unavailable">("loading");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -573,7 +580,7 @@ export function useProctoring() {
 
     isCocoRunningRef.current = true;
     cocoModelRef.current
-      .detect(canvas, 5, PHONE_SCORE_THRESHOLD)
+      .detect(canvas, 10, PHONE_SCORE_THRESHOLD)
       .then((preds: any[]) => {
         const phone = preds.find(
           (p) => p.class === "cell phone" && p.score >= PHONE_SCORE_THRESHOLD,
@@ -635,10 +642,14 @@ export function useProctoring() {
       await fm.initialize();
       faceMeshRef.current = fm;
 
-      // Load COCO-SSD for phone object detection (TF.js must load first)
+      // Load COCO-SSD for phone object detection (TF.js must load first).
+      // The model weights download from Google's CDN — ad-blockers and Brave
+      // Shields can block them, so failure is retried once and then SURFACED,
+      // never silently swallowed.
       const TF_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js";
       const COCO_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js";
-      try {
+      setPhoneDetectorStatus("loading");
+      const loadPhoneModel = async () => {
         await loadCdnScript(TF_CDN);
         await loadCdnScript(COCO_CDN);
         const tf = (window as any).tf;
@@ -646,18 +657,31 @@ export function useProctoring() {
         // much slower CPU backend and every detect blocks the main thread
         if (tf?.setBackend) { try { await tf.setBackend("webgl"); await tf.ready(); } catch {} }
         const cocoSsd = (window as any).cocoSsd;
-        if (cocoSsd?.load) {
-          cocoModelRef.current = await cocoSsd.load({ base: "lite_mobilenet_v2" });
-          // Warm-up inference — first detect compiles WebGL shaders (~1-2 s);
-          // doing it now means the first real phone check is already fast
-          try {
-            const warm = document.createElement("canvas");
-            warm.width = PHONE_DETECT_WIDTH; warm.height = 240;
-            await cocoModelRef.current.detect(warm);
-          } catch {}
+        if (!cocoSsd?.load) throw new Error("coco-ssd script did not expose cocoSsd.load");
+        cocoModelRef.current = await cocoSsd.load({ base: "lite_mobilenet_v2" });
+        // Warm-up inference — first detect compiles WebGL shaders (~1-2 s);
+        // doing it now means the first real phone check is already fast
+        try {
+          const warm = document.createElement("canvas");
+          warm.width = PHONE_DETECT_WIDTH; warm.height = 288;
+          await cocoModelRef.current.detect(warm);
+        } catch {}
+      };
+      try {
+        try {
+          await loadPhoneModel();
+        } catch {
+          await loadPhoneModel(); // one retry for transient CDN hiccups
         }
-      } catch {
-        // Phone object detection unavailable — faceAR tilt detection still works
+        setPhoneDetectorStatus("ready");
+      } catch (err) {
+        // faceAR tilt detection still works — but the user must know
+        setPhoneDetectorStatus("unavailable");
+        console.warn("Phone object detection failed to load:", err);
+        toast.warning(
+          "Phone detection model was blocked from loading (ad-blocker / Brave Shields?). Other detection channels remain active.",
+          { duration: 8000 },
+        );
       }
 
       // Reset everything
@@ -805,7 +829,7 @@ export function useProctoring() {
   return {
     isMonitoring, isLoading, alerts, sessionTime, trustScore,
     stats, currentViolation, liveStatus, videoRef,
-    verifyEnabled, setVerifyEnabled,
+    verifyEnabled, setVerifyEnabled, phoneDetectorStatus,
     startMonitoring, stopMonitoring, exportCSV, exportJSON,
   };
 }

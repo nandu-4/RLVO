@@ -199,9 +199,11 @@ function StatusRow({
 function LiveStatusPanel({
   status,
   isMonitoring,
+  phoneDetectorStatus,
 }: {
   status: LiveStatus;
   isMonitoring: boolean;
+  phoneDetectorStatus: "loading" | "ready" | "unavailable";
 }) {
   const headLabel =
     status.headDirection === "left"
@@ -291,8 +293,24 @@ function LiveStatusPanel({
           <StatusRow
             icon={<Smartphone className="h-4 w-4" />}
             label="Phone in Frame"
-            value={!isMonitoring || status.isCalibrating ? "—" : status.phoneInFrame ? "DETECTED!" : "Clear"}
-            ok={!isMonitoring || status.isCalibrating || !status.phoneInFrame}
+            value={
+              !isMonitoring
+                ? "—"
+                : phoneDetectorStatus === "unavailable"
+                  ? "Detector blocked!"
+                  : phoneDetectorStatus === "loading"
+                    ? "Loading model…"
+                    : status.isCalibrating
+                      ? "—"
+                      : status.phoneInFrame
+                        ? "DETECTED!"
+                        : "Clear"
+            }
+            ok={
+              !isMonitoring ||
+              (phoneDetectorStatus !== "unavailable" &&
+                (phoneDetectorStatus === "loading" || status.isCalibrating || !status.phoneInFrame))
+            }
           />
           <StatusRow
             icon={<Users className="h-4 w-4" />}
@@ -353,6 +371,7 @@ const Proctoring = () => {
     videoRef,
     verifyEnabled,
     setVerifyEnabled,
+    phoneDetectorStatus,
     startMonitoring,
     stopMonitoring,
     exportCSV,
@@ -563,7 +582,7 @@ const Proctoring = () => {
           <div className="space-y-4">
             {/* Live proctoring status — replaces canvas overlay */}
             <div className="animate-slide-up" style={{ animationDelay: "0.1s" }}>
-              <LiveStatusPanel status={liveStatus} isMonitoring={isMonitoring} />
+              <LiveStatusPanel status={liveStatus} isMonitoring={isMonitoring} phoneDetectorStatus={phoneDetectorStatus} />
             </div>
 
             {/* Alert log */}
