@@ -1,45 +1,84 @@
 /**
  * Unified AI backend client.
  *
- * The AI backend is a set of serverless functions in /api that hold the
- * GEMINI_API_KEY server-side (never shipped to the browser) and proxy to
- * Google's Gemini API. Switch backends with the VITE_BACKEND env variable:
- *
- *   VITE_BACKEND=api     -> same-origin /api/* (Vercel functions; default)
- *   VITE_BACKEND=python  -> local FastAPI server at VITE_PYTHON_API
- *                           (default http://localhost:8000)
+ * Routes to the configured backend (VITE_BACKEND: "python" or "api") with a fallback to the
+ * other. Server-sent error messages are propagated verbatim — the previous version discarded
+ * every non-2xx body and returned "Backend unavailable", which made a 413 (document too large),
+ * a 429 (rate limited) and a 401 (sign-in required) all look like an outage.
  */
 
-type FnName = "generate-caption" | "refine-caption" | "analyze-video" | "verify-flag";
+import { workspaceToken } from "@/lib/workspace";
+
+type FnName =
+  | "generate-caption"
+  | "refine-caption"
+  | "analyze-video"
+  | "verify-flag"
+  | "verify-document"
+  | "review-claim"
+  | "analytics"
+  | "batch-job"
+  | "benchmark"
+  | "workspace"
+  | "extract-claims"
+  | "review-queue";
 
 const backend = (import.meta.env.VITE_BACKEND ?? "api").toLowerCase();
 const pythonBase = import.meta.env.VITE_PYTHON_API ?? "http://localhost:8000";
 
-const baseUrl = backend === "python" ? pythonBase : "/api";
+const primaryUrl = backend === "python" ? pythonBase : "/api";
+const secondaryUrl = backend === "python" ? "/api" : pythonBase;
 
-export async function invokeAi<T = any>(
-  name: FnName,
-  body: unknown
-): Promise<{ data: T | null; error: Error | null }> {
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+async function attempt<T>(base: string, name: FnName, body: unknown): Promise<{ data: T } | { error: ApiError } | null> {
+  // Minting on demand means a first-time visitor's very first verification is already scoped to
+  // a workspace, so human review works immediately — no sign-up step in the way.
+  const token = workspaceToken();
+  let res: Response;
   try {
-    const res = await fetch(`${baseUrl}/${name}`, {
+    res = await fetch(`${base}/${name}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { "x-truthlens-workspace": token } : {}),
+      },
       body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      let detail = "";
-      try {
-        const err = await res.json();
-        detail = err.error ?? err.detail ?? "";
-      } catch { /* non-JSON error body */ }
-      throw new Error(`${name} failed (${res.status})${detail ? `: ${detail}` : ""}`);
-    }
-    const data = (await res.json()) as T;
-    return { data, error: null };
-  } catch (err) {
-    return { data: null, error: err as Error };
+  } catch {
+    return null; // Transport failure — the caller may try the other backend.
   }
+
+  if (res.ok) return { data: (await res.json()) as T };
+
+  // The server responded, so this is a real answer, not an outage. Do not fall through.
+  let message = `Request failed with status ${res.status}`;
+  try {
+    const payload = await res.json();
+    if (payload?.error) message = String(payload.error);
+  } catch {
+    /* non-JSON error body: keep the status-based message */
+  }
+  return { error: new ApiError(message, res.status) };
+}
+
+export async function invokeAi<T = unknown>(name: FnName, body: unknown): Promise<{ data: T | null; error: ApiError | null }> {
+  const primary = await attempt<T>(primaryUrl, name, body);
+  if (primary && "data" in primary) return { data: primary.data, error: null };
+  if (primary && "error" in primary) return { data: null, error: primary.error };
+
+  if (primaryUrl !== secondaryUrl) {
+    const secondary = await attempt<T>(secondaryUrl, name, body);
+    if (secondary && "data" in secondary) return { data: secondary.data, error: null };
+    if (secondary && "error" in secondary) return { data: null, error: secondary.error };
+  }
+
+  return { data: null, error: new ApiError(`Backend unreachable at ${primaryUrl}/${name}.`, 0) };
 }
 
 export const activeBackend = backend;

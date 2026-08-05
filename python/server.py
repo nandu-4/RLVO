@@ -72,6 +72,10 @@ class VerifyFlagIn(BaseModel):
     claim: str      # the detector's message
 
 
+class VerifyDocumentIn(BaseModel):
+    image: str      # base64 data URL of document/image
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -117,3 +121,13 @@ def post_verify_flag(body: VerifyFlagIn):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/verify-document")
+def post_verify_document(body: VerifyDocumentIn):
+    # Verification is deliberately served only by the serverless TruthLens API.
+    # That endpoint enforces upstream-claim input and evidence provenance.
+    raise HTTPException(
+        status_code=501,
+        detail="Use the /api/verify-document TruthLens endpoint for evidence-backed claim verification.",
+    )

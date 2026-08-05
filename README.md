@@ -1,384 +1,427 @@
-# RLVO — Verification-First Proctoring & Agentic Vision-Language Re-alignment
+# TruthLens AI — Enterprise AI Hallucination Verification Platform
 
-**One thesis: raw computer-vision output cannot be trusted — in captions or in proctoring — until an agent verifies it against the pixels.**
+> **"Can You Trust What AI Sees?"** — the verification layer between a vision model and the human who acts on its output.
 
-RLVO applies that thesis twice in one codebase:
+Vision language models hallucinate. A model reading an invoice may report the vendor as
+"Microsoft" when the page says "Oracle". TruthLens answers one question per claim: **does the
+document actually say this?** — and refuses to answer when it cannot prove it.
 
-1. **Verification-first exam proctoring** — a **two-stage** system where cheap real-time detectors (MediaPipe geometry, COCO-SSD) *propose* flags, and an **agentic VLM verifier** *disposes*: every high-severity flag is fact-checked against the captured frame before any trust penalty applies. Refuted flags are dismissed with reasoning; every mark against a candidate carries a visual evidence trail they could appeal. Continuous video never leaves the browser — only single flagged frames are verified, and that layer is an explicit opt-in toggle.
-2. **Vision-language re-alignment** — demonstrates how VLM captions hallucinate (invented brands, backstory, emotions) and fixes them with the same verify-then-rewrite agentic loop, claim by claim.
+It works on any document type with **zero hardcoded fields** anywhere in the frontend or backend,
+and it never substitutes sample results when a provider or retrieval fails.
 
-This attacks the two documented failures of commercial proctoring (Proctorio, ExamSoft, ProctorU): black-box false positives that punish innocent behavior, and full video streams leaving the candidate's machine.
-
-Inspired by the Real-LOD research workflow (agentic refinement of noisy language descriptions for open-vocabulary detection), re-imagined as an interactive web product.
-
----
-
-## Table of Contents
-
-- [What We Built and Why](#what-we-built-and-why)
-- [Did We Train Any Models?](#did-we-train-any-models)
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Pipeline 1 — Image Caption Re-alignment](#pipeline-1--image-caption-re-alignment)
-- [Pipeline 2 — Video Understanding](#pipeline-2--video-understanding)
-- [Pipeline 3 — Real-time Proctoring](#pipeline-3--real-time-proctoring)
-- [Python Reference Implementation](#python-reference-implementation)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [Environment Variables](#environment-variables)
-- [API Functions](#api-functions)
-- [Evaluation — How We Know It Works](#evaluation--how-we-know-it-works)
-- [Export Reports](#export-reports)
-- [Interview Talking Points](#interview-talking-points)
-
----
-
-## What We Built and Why
-
-Vision-language models (VLMs) are fluent but **overconfident**: asked to describe an image, they invent brands, materials, backstory, and emotions that are not visible. This is the *hallucination problem*, and it makes raw VLM output unusable for downstream tasks (accessibility, dataset labeling, open-vocabulary detection).
-
-RLVO demonstrates the problem and the fix side by side:
-
-- **Stage 1 (`generate-caption`)** deliberately produces a hallucination-rich caption — high temperature (1.3), a prompt that *demands* brands, backstory and confident assertions. This simulates the noisy language descriptions that the Real-LOD paper starts from.
-- **Stage 2 (`refine-caption`)** runs the **agentic re-alignment loop**: decompose the caption into atomic claims, verify each claim against the image with a deterministic fact-checker pass, then rewrite the caption using only verified content. The UI shows the real per-claim evidence log (✓ CORRECT / ✗ WRONG / ~ UNCERTAIN → correction).
-
-The proctoring dashboard applies the same "trust through verification" idea to live video: every detection channel is measured against a **per-user calibrated baseline** instead of hard-coded absolutes, which eliminates false positives from camera angle and seating position.
-
----
-
-## Did We Train Any Models?
-
-**No model was trained or fine-tuned — and that is a deliberate engineering decision worth defending in an interview.** The system composes three pretrained models and gets its accuracy from *calibration, prompt engineering, and an agentic verification architecture* instead of gradient updates:
-
-| Model | Type | Where it runs | What we did instead of training |
-|---|---|---|---|
-| **Google Gemini 2.5 Flash** | Vision-language model | Cloud (Google AI API, key held server-side) | Prompt engineering: adversarial "hallucinate confidently" prompt for stage 1; strict JSON fact-checker + grounded-rewrite prompts at temperature 0–0.2 for stage 2 |
-| **MediaPipe Face Mesh** | 468-landmark face model (Google, pretrained) | Browser (WASM, ~30 fps) | Built geometric detectors on top of the landmarks (yaw ratio, face aspect ratio, iris offset) and calibrated per-session baselines |
-| **COCO-SSD (lite_mobilenet_v2)** | Object detector, 80 COCO classes (pretrained) | Browser (TensorFlow.js, WebGL) | Tuned inference pipeline: downscaled input, confidence threshold + multi-hit confirmation, decoupled detection timer |
-
-Why not fine-tune? (a) No labeled training data exists for "this specific user's webcam at this angle" — per-session calibration solves what fine-tuning would; (b) hallucination is better fixed at the *system* level (verify-then-rewrite) than by fine-tuning a captioner, and the loop transfers to any VLM; (c) browser-side models must stay small — swapping in a custom-trained detector would cost 10–100× the size for marginal gain on the single "cell phone" class we care about.
-
-What *was* tuned, empirically, against real session reports:
-
-- Head-turn yaw threshold `0.33` (raised from 0.25 to cut borderline triggers)
-- Gaze deviation `5%` of eye width with a **leaky counter** (previously 7% + hard reset — which caused sessions to log 0 gaze events; a single frame of iris jitter kept wiping the counter)
-- Phone detection `0.35` + 2-hit confirmation on a 512px canvas, with COCO's `remote` class counted as phone suspicion (back-facing phones classify as remotes) — recall over precision is safe because the agentic verifier fact-checks every flag before it penalizes
-- Look-down: 10% face-compression sustained 20 frames; calibration window 90 frames
-
----
-
-## Architecture
+**Measured on a real invoice with planted errors:**
 
 ```
-┌────────────────────────── Browser (React + TS) ──────────────────────────┐
-│                                                                          │
-│  ImageRefinement.tsx      VideoRefinement.tsx      Proctoring.tsx        │
-│        │                        │                       │                │
-│        │ base64 image           │ canvas-extracted      │ webcam stream  │
-│        │                        │ frames (base64 JPEG)  ▼                │
-│        │                        │              useProctoring.ts          │
-│        │                        │              ├─ MediaPipe Face Mesh    │
-│        │                        │              │  (rAF loop, ~30 fps)    │
-│        │                        │              ├─ COCO-SSD (700 ms timer,│
-│        │                        │              │  512px canvas, WebGL)   │
-│        │                        │              └─ visibility/blur events │
-│        ▼                        ▼                                        │
-│   invokeAi() ──── VITE_BACKEND switch ────────────────────┐              │
-└───────────┼───────────────────────────────────────────────┼──────────────┘
-            ▼ /api (default)                                ▼ python (local)
-┌─ Vercel serverless functions ─────────┐     ┌─── FastAPI server.py ──────┐
-│  /api/generate-caption                │     │  image_refinement.py       │
-│  /api/refine-caption                  │     │  video_refinement.py       │
-│  /api/analyze-video  /api/verify-flag │     │  (verify_flag mirror)      │
-└──────────────┬────────────────────────┘     └──────────────┬─────────────┘
-               ▼                                             ▼
-        Google Gemini API (your own free GEMINI_API_KEY, server-side only)
+CORRECTED    Vendor          → ORACLE CORPORATION   (claim said Microsoft)
+VERIFIED     Invoice Number  93%
+VERIFIED     Total           93%
+CORRECTED    Payment Terms   → Net 30               (claim said Net 90)
+UNSUPPORTED  Shipping Weight 0%, HIGH risk          (absent from the document)
+
+5/5 verdicts correct · 4 cited / 14 retrieved evidence · 6 relations derived
 ```
 
-Key properties:
+### Documentation
 
-- **Proctoring detection is 100% client-side** — the video stream never leaves the browser. Only single flagged frames go to the verifier, under an explicit consent toggle.
-- **The backend is just a keyholder** — no database, no auth, no third-party AI gateway. Four small serverless functions exist solely so `GEMINI_API_KEY` never ships to the browser. The app is otherwise fully client-side.
-- **Dual backend** — the same UI hits the Vercel functions in production or a local Python FastAPI server for offline development, via one env var.
-- **Models load from CDN at session start** — no bundle bloat; the app ships ~0 MB of ML weights.
+| Document | Contents |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Why two passes, the guardrails, the trust signals, the layer map |
+| [docs/API.md](docs/API.md) | Every endpoint, request/response shapes, error contract |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Both deployment modes, env vars, health checks, rollback, security checklist |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, the five invariants, how to add a provider |
 
----
-
-## Tech Stack
-
-**Frontend**
-- [React 18](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/), [Vite](https://vitejs.dev/) (SWC)
-- [Tailwind CSS](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/) (Radix primitives)
-- [React Router DOM v6](https://reactrouter.com/), [TanStack React Query v5](https://tanstack.com/query), [Sonner](https://sonner.emilkowal.ski/)
-
-**AI / ML (client-side)**
-- [MediaPipe Face Mesh](https://google.github.io/mediapipe/solutions/face_mesh.html) — 468 facial landmarks + iris refinement (WASM)
-- [TensorFlow.js](https://www.tensorflow.org/js) + [COCO-SSD](https://github.com/tensorflow/tfjs-models/tree/master/coco-ssd) `lite_mobilenet_v2` — phone detection (WebGL backend)
-
-**Backend**
-- [Vercel serverless functions](https://vercel.com/) (Node) → **Google Gemini 2.5 Flash** via your own `GEMINI_API_KEY` (free at [aistudio.google.com/apikey](https://aistudio.google.com/apikey))
-- Alternative: local **Python FastAPI** server calling the same API
-
----
-
-## Pipeline 1 — Image Caption Re-alignment
-
-**Route:** `/image-refinement`
-
-1. **Upload** any image (PNG/JPG/WEBP) — converted to a base64 data URL in the browser.
-2. **`generate-caption`** — Gemini at temperature 1.3 with an adversarial prompt that *forces* hallucination: specific brands, backstory, emotions, zero hedging. This is the "before" exhibit.
-3. **`refine-caption`** — the agentic loop, two deterministic passes:
-   - **Pass 1 — VERIFY** (temperature 0): decompose the raw caption into atomic claims; classify each by aspect (`category / attribute / accessory / relation / location / behavior`); output a JSON verdict per claim — `CORRECT`, `WRONG` (includes anything not visible: brands, backstory, emotion), or `UNCERTAIN` with a grounded correction.
-   - **Pass 2 — REWRITE** (temperature 0.2): compose the final 3–5 sentence caption using **only** CORRECT claims and the corrections of UNCERTAIN ones. WRONG claims are dropped.
-4. The UI streams the **real evidence log** — every claim with its verdict and correction — then shows the refined caption beside the original.
-
-If Pass 1 returns unparseable JSON the function degrades gracefully to a single-pass grounded rewrite, so the demo never hard-fails.
-
----
-
-## Pipeline 2 — Video Understanding
-
-**Route:** `/video-refinement`
-
-| Mode | Frames | Output |
-|---|---|---|
-| **Video Summary** | 6 evenly-spaced | One 2–3 sentence grounded summary of the whole clip |
-| **Time Capsule** | 8 evenly-spaced | One caption per frame with timestamp, rendered as a timeline |
-
-- Frame extraction is pure browser: seek the `<video>` element, draw to `<canvas>`, export base64 JPEG. No ffmpeg, no upload of the raw video.
-- Time Capsule captions all frames **in parallel** (`Promise.all`) — latency is ~1 request instead of ~8 sequential ones.
-- Both prompts carry explicit grounding rules: no invented names/brands/sounds/dialogue, no events "between" frames, no hedging words; temperature 0.2.
-
----
-
-## Pipeline 3 — Real-time Proctoring
-
-**Route:** `/proctoring`
-
-Two pretrained models run simultaneously in the browser, plus DOM events:
-
-### Two-Phase Calibration (~7 seconds)
-
-**Phase 1 — center (60 frames):** records the neutral face aspect ratio and iris center. Every later threshold is a **delta from this baseline** — camera angle, distance, and seating position cannot cause false positives.
-
-**Phase 2 — corner dots (4 × 40 frames):** a full-screen overlay shows a dot at each screen corner; the candidate follows it **with eyes only**. The recorded iris extremes (horizontal *and* vertical) become the candidate's **personal gaze bounds** — anything outside the box is off-screen by definition. If the candidate doesn't follow the dots (range too small), gaze falls back to center-delta mode.
-
-**Scene object baseline:** during calibration, every object COCO-SSD sees in the room is recorded as *authorized*. This powers novel-object detection below.
-
-### Head Turn (Yaw) — MediaPipe, every frame
-
-```
-yaw = (noseTip.x − earMidX) / (earSpan / 2)      alert if |yaw| > 0.33
-```
-
-### Gaze Tracking (Iris) — MediaPipe, every frame
-
-Iris landmarks 468/473 (needs `refineLandmarks: true`), normalized by eye width relative to the eye-corner midpoint, on **both axes**:
-
-- Off-screen = outside the corner-calibrated personal bounds (left/right/up/down), expanded by a 20% margin so on-screen reading never triggers
-- **Leaky counter**: deviated frames increment a score; in-bounds frames *drain* it instead of resetting — one frame of iris jitter can't erase a sustained glance (~0.3 s to trigger)
-- **Escalation policy**: the first 2 off-screen gazes are logged quietly at low severity; from the **3rd occurrence** every one is a high-severity violation
-- Skipped while the head itself is turned (the head-turn alert covers that; iris geometry is unreliable at high yaw). Gaze therefore specifically catches **eyes-only glancing**.
-
-### Looking Down / Phone Use (faceAR) — MediaPipe, every frame
-
-```
-faceAR = faceHeight / faceWidth        (foreshortens when head tilts down)
-```
-
-A **10% compression** below baseline sustained **20 frames** (~0.7 s) → `looking_down` alert. This catches phone-in-lap use that the object detector cannot see.
-
-### Phone + Novel Objects (COCO-SSD) — independent 700 ms timer
-
-- Runs on its **own timer**, decoupled from the Face Mesh loop, so face-tracking latency never delays it; inference on a **512px downscaled canvas** on the WebGL backend, explicitly selected and **warmed up** at session start
-- **Phone: alerts on FIRST sight** at confidence ≥ 0.35 (`cell phone` or `remote` — COCO labels back-facing phones as remotes). A candidate photographing the exam paper is in and out of frame in ~2 s, so there is no time for multi-hit confirmation — the AI verifier is the precision filter, not a slow confirmation loop
-- **Novel objects: anything not in the scene baseline** (recorded during calibration) at ≥ 0.4 is flagged instantly and sent to the verifier with the question "is this an exam-cheating aid?" — notes, books, earbuds, second devices get CONFIRMED; water bottles, cups, chargers get REFUTED with no penalty. One flag per object class per session.
-- Model-load failures (ad-blockers / Brave Shields block the weights CDN) are retried and then **surfaced** — a toast plus "Detector blocked!" in the status panel, never a silent "Clear"
-
-### Tab / Focus — DOM events
-
-`visibilitychange` (tab switch / minimize) and window `blur` (focus to another app).
-
-### Stage 2 — Agentic Flag Verification (the novel layer)
-
-The detectors above are fast but dumb geometry — every proctoring product has them, and their false positives are where real students get hurt. RLVO adds what none of them have: **an adversarial VLM verifier that fact-checks each high-severity flag before it counts.**
-
-Flow, implemented in `useProctoring.ts` + `api/verify-flag.ts`:
-
-1. A verifiable flag fires (`phone_detected`, `multiple_faces`, `no_face`, `looking_down` — visual claims; tab switches aren't visual, head turns are too frequent to verify economically).
-2. The current frame is captured (640px JPEG) as the **evidence exhibit** — the trust penalty is **deferred**.
-3. The frame + the detector's claim go to the verifier, prompted as an *adversarial skeptic* ("detectors are frequently wrong; a wrong CONFIRMED unfairly accuses a real person; confirm only what you clearly see") with per-flag-type questions that encode known false-positive modes (a face in a poster is not a second person; a remote control is not a phone; glancing at the keyboard is not phone use). Temperature 0, strict JSON verdict.
-4. The verdict disposes:
-   - **CONFIRMED** → full trust penalty, evidence reasoning attached
-   - **REFUTED** → **dismissed**: no penalty, struck through in the log, counted in "Dismissed by AI"
-   - **UNCERTAIN** → half penalty
-   - Verifier unreachable → full penalty, marked `unverified` — so blocking the network can never be used to dodge penalties (fail-safe, not fail-open)
-5. The alert log shows the verdict badge, the verifier's reasoning, and the flagged-frame thumbnail. Exports carry the full audit trail.
-
-Privacy trade-off, stated honestly: continuous video never leaves the browser; **single flagged frames** are sent for verification only when the "Agentic flag verification" toggle is on (visible consent control on the dashboard; off = fully offline monitoring with classic immediate penalties).
-
-### Trust Score
-
-Starts at 100. Unverified channels decay immediately per severity: high −6, medium −3, low −1, info 0. Verified channels decay only on the verifier's verdict: confirmed −6, uncertain −3, dismissed 0.
-
----
-
-## Python Reference Implementation
-
-`python/` contains standalone mirrors of all three pipelines — used for offline runs, benchmarking, and to make the system explainable in academic settings (IOMP report, viva):
-
-| Script | Mirrors | Notes |
-|---|---|---|
-| `image_refinement.py` | `generate-caption` + `refine-caption` | Same two-pass verify→rewrite loop, Gemini direct API, retry with exponential backoff |
-| `video_refinement.py` | `analyze-video` | OpenCV frame extraction, Summary + Time Capsule modes |
-| `proctoring.py` | `useProctoring.ts` | MediaPipe Face Mesh + YOLOv8n phone detection (desktop-grade equivalent of COCO-SSD) |
-| `server.py` | The `/api` functions layer | FastAPI server exposing the same routes, so the React app can run fully local with `VITE_BACKEND=python` |
-
-```bash
-pip install -r python/requirements.txt        # Python 3.9–3.11 (mediapipe constraint)
-export GEMINI_API_KEY=...                     # free at aistudio.google.com/apikey
-python python/image_refinement.py photo.jpg
-```
-
----
-
-## Project Structure
-
-```
-src/
-├── components/
-│   ├── Navigation.tsx          # Top nav bar linking all 3 pages
-│   └── ui/                     # shadcn/ui component library
-├── hooks/
-│   └── useProctoring.ts        # All proctoring logic — MediaPipe, COCO-SSD, alerts, export
-├── integrations/
-│   └── aiClient.ts             # invokeAi() — VITE_BACKEND switch (api | python)
-├── pages/
-│   ├── Index.tsx               # Landing page
-│   ├── ImageRefinement.tsx     # Caption re-alignment demo
-│   ├── VideoRefinement.tsx     # Video summary + time capsule
-│   └── Proctoring.tsx          # Proctoring dashboard
-└── App.tsx                     # Routes
-
-api/                            # Vercel serverless functions (the keyholder backend)
-├── _gemini.ts                  # Shared Gemini client — retries, data-URL parts, JSON parsing
-├── generate-caption.ts         # Stage 1 — hallucination-rich raw caption
-├── refine-caption.ts           # Stage 2 — two-pass agentic re-alignment
-├── analyze-video.ts            # Video summary + parallel frame captions
-└── verify-flag.ts              # Adversarial verifier for proctoring flags
-
-python/                         # Reference implementation (see above)
-vercel.json                     # SPA rewrites (everything except /api → index.html)
-```
-
----
-
-## Getting Started
+### Quick start
 
 ```bash
 npm install
-
-# Full-stack local dev (frontend + /api functions together):
-npx vercel dev       # → http://localhost:3000
-
-# Frontend-only dev (AI features need the Python backend or a deploy):
-npm run dev          # → http://localhost:8080
-
-npm run build        # production build
+cp .env.example .env      # add GEMINI_API_KEY from https://aistudio.google.com/apikey
+npx vercel dev            # http://localhost:3000
+npm run verify            # typecheck + lint + 64 tests + build
 ```
 
-Prerequisites: Node 18+ and a free `GEMINI_API_KEY` from [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
-
-**Deploying (free):**
-
-1. Push to GitHub → import the repo at [vercel.com](https://vercel.com) (framework: Vite, zero config needed — `vercel.json` is included).
-2. In the Vercel project settings, add environment variable `GEMINI_API_KEY`.
-3. Done — frontend and the four `/api` functions deploy together on every push.
+> **Free-tier quota:** `gemini-2.5-flash` allows 20 requests/day, and verification makes two model
+> calls — roughly **10 verifications/day**. Measured, not assumed. Enable billing before demoing.
 
 ---
 
-## Environment Variables
+## 🌟 Key Platform Features
 
-See `.env.example`. Only one secret exists in the whole system:
+### 1. Zero Hardcoding Universal Claims Architecture
+The platform is document-agnostic. No document type, field name, or schema is hardcoded anywhere
+in the frontend or backend — the UI renders whatever `claims[]` the server returns. It has been
+exercised on resumes, contracts, medical reports, purchase orders, and architecture diagrams, but
+nothing in the code is specific to any of them.
 
-```env
-GEMINI_API_KEY=...        # server-side only (Vercel env / vercel dev) — never VITE_-prefixed
-# GEMINI_MODEL=gemini-2.5-flash-lite   # optional model override
+**What TruthLens verifies.** Two modes:
 
-# Optional client-side switches:
-# VITE_BACKEND=python                  # use the local FastAPI backend instead of /api
-# VITE_PYTHON_API=http://localhost:8000
+- **Cross-check (primary).** You supply the claims your AI system produced about a document, and
+  TruthLens checks each against evidence in that document. This is the strong mode — the proposer
+  and the verifier are different systems.
+- **Self-check.** TruthLens extracts the document's business facts as atomic claims, then runs
+  them through the identical verification pipeline. Useful when you have no upstream system to
+  check, but weaker: the proposer and the verifier share a failure mode, so a fact misread
+  identically twice will still verify cleanly. The UI labels every self-check run as such.
+
+### 2. Verification Pipeline (as implemented)
+
+Every stage below actually runs and reports its **measured** duration in the response
+`timeline[]`. Nothing is simulated client-side.
+
+```
+      [ Upload document + upstream AI claims ]
+                        │
+                        ▼
+   [ 0. Claim extraction ]  api/extract-claims.ts  (self-check only)
+        Business facts → atomic claims, editable before verifying
+                        │
+                        ▼
+   [ 1. Intake ]  validate payload, size, claim syntax
+                        │
+                        ▼
+   [ 2. Document understanding ]  api/_documentIndex.ts
+        Claim-blind transcription → normalised, deduped,
+        junk-filtered block index with page, region,
+        coordinates and legibility per block
+                        │
+                        ▼
+   [ 3. Evidence retrieval ]  api/_retrieval.ts
+        Independent search — no model in the loop.
+        6 strategies: value-match · lexical · numeric ·
+        field-label · region-affinity · spatial-neighbour
+                        │
+                        ▼
+   [ 4. Risk prediction ]  api/_signals.ts
+        Hallucination risk from retrieval strength and page
+        legibility, BEFORE the verifier runs
+                        │
+                        ▼
+   [ 5. Verification ]  provider adapter
+        Model may only cite ids the retrieval engine returned
+                        │
+                        ▼
+   [ 6. Reflection & trust scoring ]  5 independent signals;
+        unmeasured signals excluded, not substituted;
+        ungrounded corrections dropped
+                        │
+                        ▼
+   [ 7. Persistence ]  document → claims → evidence →
+        relations → audit trail → review tasks (workspace mode)
+                        │
+                        ▼
+   [ Decision: Verified │ Corrected │ Unsupported │ Needs Review ]
 ```
 
-> `.env` is gitignored — the key never enters version control, and because it has no
-> `VITE_` prefix it can never be bundled into browser JavaScript.
+**Why two passes.** Transcription never sees a claim. A model asked to "find evidence for X"
+will find something resembling X — when the same model both asserts a fact and supplies its own
+proof, verification is circular. Retrieval happens between the two passes and the verifier can
+only cite what it returned, so evidence is retrieved rather than manufactured to fit.
+
+**Structural guardrails** (enforced in code, not asked for in the prompt):
+- A cited id the retrieval engine never returned is discarded.
+- `verified`/`corrected` with no resolvable evidence is downgraded to `needs_review`.
+- A corrected value that appears in no cited block is dropped.
+- Container junk (PDF internals, xref, TeX producer strings) is rejected at index time.
+
+**Known gaps — deliberately not claimed as built:**
+- Transcription is a model call, not a dedicated OCR engine. It is claim-blind, which removes the
+  circularity, but a wrong transcription is still a wrong index.
+- Only the Gemini provider adapter exists. The benchmark therefore compares Gemini models rather
+  than vendors, and labels itself as exactly that.
+- No labelled ground truth, so the benchmark reports behavioural measurements (decisiveness,
+  corrections raised, evidence citation, latency) and explicitly does not claim accuracy.
+- Batch sequencing is browser-driven; there is no worker or message broker.
+- No authentication, by design — see the security trade-off below.
+
+### 3. Verification Card (`VerificationCard.tsx`)
+Each extracted claim renders as a reusable verification card featuring:
+- **Category & Field Name** (e.g. `Education · College / University`)
+- **Status Badges**:
+  - `Verified`: Evidence explicitly confirms raw AI output.
+  - `Corrected`: Evidence conflicts with AI output; engine automatically supplies verified truth.
+  - `Unsupported`: No evidence exists in document (prevents hallucination when questions cannot be answered).
+  - `Needs Review`: Ambiguous or low confidence.
+- **Trust Score Pill**: Percentage trust metric (0–100%).
+- **Claim Value Transition**: Original AI Output vs Verified Truth (with strike-through for corrected hallucinations).
+- **Explainable AI (XAI) Reason Snippet**: Human-readable narrative detailing *why* the decision was made.
+- **Provenance Summary**: Evidence signals count & page number indicator.
+- **Human-in-the-Loop Buttons**: `Approve`, `Reject`, `Override` buttons.
+
+### 4. Interactive Inspection Drawer (`VerificationSidePanel.tsx`)
+Clicking any `VerificationCard` slides open a deep inspection drawer:
+- **Explainable Trust Breakdown**: each of the five signals with its score, **what it was measured
+  from**, and a "why this score" narrative. Signals nothing measured are shown as excluded rather
+  than filled in with another signal's value.
+- **Pre-verification hallucination risk**: predicted from retrieval strength and page legibility
+  *before* the verifier runs, with the specific reasons (low legibility, no numeric match,
+  ambiguous regions).
+- **Evidence Retrieval trace**: which surfaces were searched, which strategies hit, and how many
+  candidates the verifier cited versus ignored.
+- **Interactive Evidence Viewer**: real pdf.js rendering with page navigation, zoom, zoom-to-evidence,
+  and normalised bounding-box overlays that distinguish cited from merely-retrieved regions.
+- **Storytelling Flow**: `Original AI Output` → `Retrieved Evidence` → `Verified Output` → `Explanation`.
+- **Measured Pipeline Timeline** (`PipelineTimeline.tsx`): real server-side stage durations.
+- **Human Feedback Form**: approve / reject / override with reviewer comments. Disabled when the
+  run was not persisted, because a decision needs a durable claim record to be auditable.
+
+### 5. Compliance Report & Audit Trail (`AuditTrailDrawer.tsx`, `lib/verificationReport.ts`)
+- Decision log for the session: original claim, final value, status, trust, signals measured,
+  pre-verification risk, and who decided.
+- **Full report (PDF)** opens a self-contained compliance document — document metadata, verification
+  summary, measured decision timeline, and a per-claim section with signals, "why this score",
+  the reasoning trace, cited evidence text with coordinates, and any human decision. It carries
+  its own print stylesheet, so what reaches the printer is a record, not a screenshot of the UI.
+- **JSON** (full result) and **CSV** (formula-injection safe) exports.
+
+### 6. Model Abstraction Layer (`api/_providers/`)
+`VisionProviderAdapter` is the only thing the pipeline knows about. Adding a provider means
+implementing `transcribe` + `verify` in one new file and adding one line to the registry — the
+retrieval engine, scoring, persistence and UI are untouched.
+
+- **Gemini** (Google DeepMind) — adapter implemented and configured
+- Claude · GPT-4o · Llama Vision · Qwen VL — registered in the interface, **no adapter yet**;
+  requests naming them are rejected with `501` rather than silently falling back to Gemini.
+
+### 7. Claim Relation Graph (`ClaimRelationGraph.tsx`)
+Relationships are derived from where each claim's evidence physically sits — shared evidence
+block, shared page region, shared page, or related field name. Nothing here knows what an invoice
+or a resume is.
+
+### 8. Human Review Queue (`/review`)
+Claims the engine would not decide automatically, across every document in the workspace, with
+triage context (pre-verification risk, evidence cited vs retrieved, trust score) and assignment.
+This closes the spec's chain — Needs Review → Assign → Comment → Decide → Audit → Final decision.
+The decision itself still happens in the claim drawer, where the evidence is; approving, rejecting
+or overriding resolves the task and writes to the audit trail automatically.
+
+Reviewer names are self-declared. With no accounts, the audit trail records who *said* they made a
+decision, not a verified identity — stated on the page where the name is entered.
+
+### 9. Enterprise Dashboard (`/dashboard`)
+Every figure is computed from verifications this workspace actually ran — there is no sample data
+anywhere. Most-hallucinated fields, correction / unsupported / needs-review rates, average signals
+measured, evidence citation rate, pre-verification risk distribution, top document types, model
+comparison, a 30-day trust trend, and recent activity. An empty workspace shows an empty state.
+
+Charts use **labelled rows rather than stacked segments or pie slices**: the app's status palette
+was validated for colour-vision separation and warning↔success sits at ΔE 7.5 (protan), inside the
+6–8 floor band that is only usable with secondary encoding. Rather than repaint a locked theme,
+every value carries its own text label and number, so identity is never colour-alone.
+
+### 10. Batch Verification (`/batch`)
+Verify one claim set across many documents. The job record lives server-side (so it survives a
+refresh and yields one consolidated report) while the browser sequences submissions — this
+deployment has no worker or message broker, and pretending otherwise would be dishonest. Live
+per-document progress, failure detail, stop-after-current, and a consolidated JSON export.
+
+### 11. Compliance & Admin (`/admin`)
+Workspace name and retention policy (retention re-applies to already-stored documents, not just
+future ones), workspace key management with export/switch/forget, apply-retention-now, full
+erasure, the API activity log, human review decisions, the live provider registry, the
+verification rules actually enforced in code, and a compliance posture table.
+
+The compliance table reports **controls it can verify about this deployment** — encryption in
+transit and at rest, retention enforcement, erasure, audit coverage, tenant isolation — and marks
+authentication and RBAC as *not provided*. It does not claim SOC 2, GDPR or HIPAA readiness:
+those are organisational certifications covering people, contracts and process, and cannot be
+asserted by software about itself.
 
 ---
 
-## API Functions
+## 🛠️ Technology Stack
 
-Four serverless functions in `api/` — the entire backend. No database, no auth, no third-party gateway: they exist solely so the Gemini key stays server-side.
+- **Frontend**: React 18, TypeScript, Vite, TailwindCSS, Framer Motion, Lucide Icons, Recharts.
+- **Backend Options**:
+  - **Vercel Serverless Functions** (`/api/*` in Node.js/TypeScript).
+  - **Python FastAPI Server** (`/python/server.py` with Uvicorn).
+- **Database & Persistence**: Supabase PostgreSQL with Row-Level Security (RLS). Optional — see
+  the two deployment modes below.
+- **AI Models**: Google Gemini VLM API, MediaPipe WASM, COCO-SSD TensorFlow.js.
 
-| Function | Input | Output |
+---
+
+## 🚀 Getting Started & Local Setup
+
+### 1. Prerequisites
+- Node.js (v18+ recommended) or Bun
+- Python 3.10+ (if running Python backend)
+- Google Gemini API Key (Optional — a free key can be obtained at [Google AI Studio](https://aistudio.google.com/apikey))
+
+### 2. Environment Setup
+
+**There is no sign-up.** Anyone can use TruthLens immediately. Tenancy is carried by an anonymous
+*workspace token* the browser mints on first use; the server stores only its SHA-256 hash and
+scopes every query by the workspace it resolves to.
+
+> **Security trade-off, stated plainly.** The workspace token is a bearer secret, like an unlisted
+> share link: whoever holds it has the workspace, there is no second factor, and it cannot be
+> recovered — we hold no identifier that could prove it was yours. This is right for open
+> self-serve use and is **not** sufficient for regulated personal or health data. The Admin page
+> says the same thing to the user, and the Compliance tab lists authentication as *not provided*.
+
+Two modes, decided by environment and never by the client:
+
+| | **Stateless** (default) | **Workspace** |
 |---|---|---|
-| `POST /api/generate-caption` | `{ image }` (base64 data URL) | `{ caption }` |
-| `POST /api/refine-caption` | `{ image, rawCaption }` | `{ refinedCaption, logs[], verdicts[], stats }` |
-| `POST /api/analyze-video` | `{ frames[], mode: "summary" \| "timecapsule" }` | `{ summary }` or `{ captions[] }` |
-| `POST /api/verify-flag` | `{ frame, flagType, claim }` | `{ verdict: "CONFIRMED" \| "REFUTED" \| "UNCERTAIN", evidence, confidence }` |
+| Trigger | `SUPABASE_*` unset | `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` set |
+| Verification | Works for anyone, rate-limited | Works for anyone, rate-limited |
+| Storage | Nothing persisted | Auto-provisioned workspace on first request |
+| Review / analytics / batch / audit | Unavailable, with the reason shown per feature | Enabled |
 
-All return HTTP 500 with `{ error }` on failure; `refine-caption` degrades to single-pass if the verification JSON fails to parse; transient Gemini 429/5xx responses are retried with exponential backoff.
+Because nothing authenticates, the browser never reaches the database: every table is revoked from
+the `anon` and `authenticated` roles, and all access goes through the API, which holds the
+service-role key. RLS is defence in depth rather than the access-control mechanism.
 
----
+Create a `.env` file in the root directory:
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
+VITE_BACKEND=api
 
-## Evaluation — How We Know It Works
+# Optional — switches the API into workspace mode (apply supabase/migrations first)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+```
 
-**Caption re-alignment** — claim-level accounting, produced by the system itself:
-- Every refinement run returns `verdicts[]` and `stats { correct, wrong, uncertain }` — i.e., how many claims the raw caption got wrong and what survived verification. Across typical photos, the adversarial stage-1 caption produces a majority of WRONG/UNCERTAIN claims (invented brands, backstory, emotion), and the refined caption retains only visually grounded content — the per-claim log is the audit trail.
-- This mirrors hallucination metrics from the literature (CHAIR-style object hallucination counting), done claim-by-claim rather than object-by-object.
+**Rate limiting is in-memory and per function instance.** It stops one caller hammering a warm
+instance; it is not a billing control. Put a durable limiter or API gateway in front before
+exposing this publicly.
 
-**Flag verification** — measurable false-positive reduction:
-- Every session report now separates *detector proposals* from *verified violations*: the "Dismissed by AI" count is literally the number of false accusations the system prevented. Run a session, hold up a TV remote (classic phone false-positive), and watch the verifier refute it with written reasoning — that demo *is* the evaluation.
+### 3. Installation
+Install frontend dependencies:
+```bash
+npm install
+```
 
-**Proctoring** — session reports as ground truth:
-- Every session exports CSV/JSON with per-channel counts. Detection thresholds were tuned against real recorded sessions: e.g., a session that visibly included off-screen glances but logged `Gaze Aways: 0` exposed the hard-reset counter bug; a phone held in frame for seconds before alerting exposed the full-resolution + 0.6-threshold bottleneck. Both fixes are documented in [Did We Train Any Models?](#did-we-train-any-models).
-- Latency: phone checks run every 700 ms on a 320px canvas with a warmed WebGL backend — worst-case time-to-alert ≈ 700 ms × 2 confirmations + inference ≈ **~1.5–2 s**, versus 5–15+ s before.
+If using the Python FastAPI backend:
+```bash
+cd python
+pip install -r requirements.txt
+```
 
-**Engineering checks** — `tsc --noEmit` clean, production `vite build` clean, Python modules compile; manual end-to-end runs of all three pages.
+### 4. Running the Application locally
 
----
+#### Option A: React Frontend + Vercel Serverless Functions (Default)
+Run the Vite development server:
+```bash
+npm run dev
+```
+Open your browser at `http://localhost:8080` or `http://localhost:5173`.
 
-## Export Reports
+#### Option B: React Frontend + Python FastAPI Backend
+Start Python FastAPI backend in terminal 1:
+```bash
+cd python
+uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+```
+Set `VITE_BACKEND=python` in `.env`, then start React frontend in terminal 2:
+```bash
+npm run dev
+```
 
-At session end, **Export CSV** or **Export JSON** downloads the full report: every alert (timestamp, type, message, severity) plus a summary — trust score, duration, and per-channel counts including phone detections.
-
-```json
-{
-  "exportedAt": "2026-07-26T10:30:00.000Z",
-  "durationSeconds": 900,
-  "trustScore": 74,
-  "stats": { "headTurns": 2, "gazeAways": 1, "noFaceEvents": 0,
-             "multipleFaceEvents": 0, "lookingDownEvents": 1,
-             "phoneDetectedEvents": 2, "tabSwitches": 0 },
-  "alerts": [ { "type": "head_turn_right", "message": "Head turned right (41% deviation)", "severity": "medium", "time": "10:16:34 AM", "timestamp": 1747131394000 } ]
-}
+### 5. Checks
+```bash
+npm run typecheck   # tsconfig.app.json (src) + tsconfig.api.json (api, strict)
+npm run lint
+npm run build
 ```
 
 ---
 
-## Interview Talking Points
+## 📂 Project Architecture & Directory Layout
 
-- **What's genuinely new:** commercial proctoring stops at stage 1 (raw detectors → raw accusations). RLVO adds stage 2: an adversarial VLM verifier that fact-checks every high-severity flag against the frame before it penalizes, dismisses false positives with written reasoning, and attaches the frame as an appealable evidence exhibit. "Detectors propose, the verifier disposes" — one sentence nobody will confuse with Proctorio.
-- **Fail-safe design:** if the verifier is unreachable, the standard penalty applies — so a candidate can't dodge penalties by blocking the network. Verification can only ever *help* an honest candidate, never a dishonest one.
-- **The privacy trade-off, owned explicitly:** continuous video never leaves the browser; single flagged frames are sent only under a visible consent toggle. Being able to articulate why this is still a radically smaller footprint than streaming everything is itself a talking point.
-- **Problem framing:** VLM hallucination is a *system* problem, not just a model problem — RLVO fixes it with verify-then-rewrite architecture rather than fine-tuning, so the fix is model-agnostic.
-- **Agentic loop:** decompose → verify each claim at temperature 0 → rewrite from verdicts → emit the evidence log. Two LLM calls, deterministic where it matters, graceful degradation when parsing fails.
-- **Why no training:** per-session calibration replaces personalization-by-fine-tuning; pretrained detectors are sufficient when the *pipeline* around them is tuned (downscaling, thresholds, confirmation logic, backend selection).
-- **Privacy:** proctoring video never leaves the browser — the models come to the data, not the reverse.
-- **Real debugging story:** the gaze channel logged zero events in production sessions. Root cause: a hard-reset consecutive-frame counter destroyed by single-frame iris jitter. Fix: leaky counter + lower threshold + gating gaze behind head pose. The phone channel was slow because inference ran at 1280×720 on a possibly-CPU TF.js backend inside the face-tracking loop at a 0.6 confidence gate; fix: dedicated timer, 320px canvas, explicit WebGL + warm-up, 0.45 with 2-hit confirmation.
-- **Trade-offs made:** two-pass refinement doubles latency and cost for accuracy and auditability; parallel frame captioning trades burst rate-limit risk for 8× latency win; leaky counter trades a slightly slower alert for drastically fewer missed detections.
+```
+RLVO-realLOD-main/
+├── api/                             # Serverless API Endpoints (strict TS, see tsconfig.api.json)
+│   ├── _providers/                  # ── Model abstraction layer ──
+│   │   ├── types.ts                 #    VisionProviderAdapter interface
+│   │   ├── gemini.ts                #    Gemini adapter (transcribe + verify)
+│   │   └── index.ts                 #    Registry — add a provider in one line
+│   ├── _geometry.ts                 # Bounding-box normalisation (0-1 / 0-100 / 0-1000 → %)
+│   ├── _documentIndex.ts            # Searchable block index from claim-blind transcription
+│   ├── _retrieval.ts                # Evidence Retrieval Engine (6 strategies, no model)
+│   ├── _signals.ts                  # Independent trust signals, risk prediction, claim graph
+│   ├── _truthlens.ts                # Claim assembly, guardrails, stage recorder
+│   ├── _gemini.ts                   # HTTP client: timeouts, retries, tolerant JSON parsing
+│   ├── _auth.ts                     # Identity, org resolution, ownership checks
+│   ├── _ratelimit.ts                # Per-instance rate limiting (guardrail, not a control)
+│   ├── _persistence.ts              # Durable write: document → claims → evidence → audit
+│   ├── _pipeline.ts                 # Shared pipeline — verify and benchmark run identical code
+│   ├── _workspace.ts                # Anonymous workspace resolution, activity log, erasure
+│   ├── verify-document.ts           # Verification handler (maxDuration 60s, two provider calls)
+│   ├── review-claim.ts              # Human decision handler (workspace-scoped)
+│   ├── extract-claims.ts            # Business fact → atomic claim extraction (self-check)
+│   ├── review-queue.ts              # Cross-document review queue & assignment
+│   ├── analytics.ts                 # Dashboard aggregates, computed from stored runs
+│   ├── batch-job.ts                 # Batch job create / progress / cancel
+│   ├── benchmark.ts                 # Multi-model head-to-head on one document
+│   └── workspace.ts                 # Settings, compliance posture, activity, purge, erase
+├── python/                          # Python Backend Implementation
+│   ├── server.py                    # FastAPI Web Server
+│   └── image_refinement.py          # TruthLens Document Verification Engine
+├── src/
+│   ├── components/truthlens/        # Enterprise UI Components
+│   │   ├── VerificationCard.tsx     # Dynamic Claim Card with XAI & Feedback
+│   │   ├── VerificationSidePanel.tsx# Evidence, reasoning, comparison & review drawer
+│   │   ├── DocumentEvidenceViewer.tsx # pdf.js viewer: page nav, zoom-to-evidence, overlays
+│   │   ├── TrustScoreBreakdown.tsx  # Per-signal score, its basis, and "why this score"
+│   │   ├── ClaimRelationGraph.tsx   # Relationships derived from evidence location
+│   │   ├── PipelineTimeline.tsx     # Measured server-side stage durations
+│   │   ├── charts.tsx               # Labelled-row bars & single-series trend (CVD-safe)
+│   │   ├── AuditTrailDrawer.tsx     # Compliance Audit Log & JSON/CSV Exporter
+│   │   ├── VisionProviderSelector.tsx# Multi-LLM Provider Selector
+│   │   ├── VerificationSummaryCards.tsx # Metrics Cards (Trust Score, Risk)
+│   │   └── LandingSections.tsx      # High-Impact Hero & Feature Sections
+│   ├── pages/
+│   │   ├── TruthLensVerify.tsx      # Main Verification Studio Page
+│   │   ├── TruthLensBatch.tsx       # Batch verification with live job progress
+│   │   ├── TruthLensReview.tsx      # Human review queue with assignment
+│   │   ├── TruthLensBenchmark.tsx   # Multi-model comparison & per-claim disagreement
+│   │   ├── TruthLensAdmin.tsx       # Workspace, compliance posture, activity log
+│   │   ├── TruthLensDashboard.tsx   # Analytics & Risk Dashboard Page
+│   │   ├── ImageRefinement.tsx      # Real-LOD Image Captioning Re-alignment
+│   │   └── Proctoring.tsx           # Verification-First Live Proctoring
+│   ├── types/
+│   │   └── truthlens.ts             # TruthLens v2.0 Enterprise TypeScript Interfaces
+│   └── lib/
+│       ├── workspace.ts             # Anonymous workspace token (mint / switch / forget)
+│       ├── verificationReport.ts    # Compliance report, JSON & CSV export
+│       └── visionProviders.ts       # Provider display metadata
+├── supabase/
+│   └── migrations/                  # PostgreSQL Schema Migration Scripts
+│       ├── 20260804000000_universal_claims_schema.sql
+│       ├── 20260805000000_fix_rls_policy_lockout.sql
+│       ├── 20260806000000_retrieval_provenance.sql
+│       └── 20260807000000_anonymous_workspaces.sql     # Apply ALL FOUR, in order
+├── package.json
+└── vite.config.ts
+```
 
 ---
 
-## License
+## 🗄️ Database Schema (`supabase/migrations/`)
 
-MIT
+Apply **all four** migrations, in filename order. The second is not optional: the first enables
+RLS on `claim_evidence`, `verification_timeline` and `audit_trails` while dropping their policies,
+which locks those tables out entirely for non-service clients.
+
+- `organizations` / `organization_members`: tenancy and roles (`admin`, `reviewer`, `member`, `viewer`).
+- `documents`: document metadata, trust score, risk level, retention window, processing status.
+- `claims`: verified claims, status, the five-signal breakdown, how many signals were measured,
+  pre-verification risk, and the stored score rationale (so a report regenerates identically).
+- `claim_evidence`: transcribed text, page numbers, normalised bounding boxes, which retrieval
+  strategies found it, and whether the verifier cited it or ignored it.
+- `claim_relations`: derived relationships between claims (shared evidence / region / page).
+- `organizations`: anonymous workspaces, keyed by the SHA-256 hash of the workspace token.
+- `verification_jobs` / `verification_job_items`: batch jobs and their per-document outcomes.
+- `model_benchmarks`: benchmark runs, one row per model per run.
+- `api_activity`: route, action, status and duration for the compliance activity log.
+- `verification_timeline`: the measured stage durations for each run.
+- `audit_trails`: append-only record of every decision — machine and human.
+- `review_tasks` / `review_decisions`: the human-review queue and its outcomes.
+
+
+---
+
+## ⚖️ License & Attribution
+
+Inspired by the **Real-LOD (ICLR 2025)** research workflow for agentic vision-language grounding and verification.

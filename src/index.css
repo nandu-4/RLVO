@@ -111,3 +111,193 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+/* ── TruthLens AI Glassmorphism & Aurora Utilities ── */
+
+.glass {
+  background: hsla(220, 40%, 8%, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid hsla(0, 0%, 100%, 0.08);
+}
+
+.glass-light {
+  background: hsla(220, 40%, 15%, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid hsla(0, 0%, 100%, 0.15);
+}
+
+.glass-strong {
+  background: hsla(220, 40%, 6%, 0.85);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border: 1px solid hsla(0, 0%, 100%, 0.08);
+}
+
+@keyframes aurora {
+  0%, 100% { background-position: 0% 50%; }
+  25% { background-position: 50% 0%; }
+  50% { background-position: 100% 50%; }
+  75% { background-position: 50% 100%; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.05); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px hsla(220, 90%, 56%, 0.2), 0 0 60px hsla(220, 90%, 56%, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 30px hsla(220, 90%, 56%, 0.4), 0 0 80px hsla(220, 90%, 56%, 0.2);
+  }
+}
+
+.aurora-bg {
+  background: linear-gradient(
+    135deg,
+    hsl(222, 47%, 5%) 0%,
+    hsl(240, 50%, 8%) 20%,
+    hsl(260, 40%, 10%) 40%,
+    hsl(220, 50%, 8%) 60%,
+    hsl(200, 50%, 6%) 80%,
+    hsl(222, 47%, 5%) 100%
+  );
+  background-size: 400% 400%;
+  animation: aurora 20s ease-in-out infinite;
+}
+
+.animate-pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
+.animate-glow-pulse { animation: glow-pulse 3s ease-in-out infinite; }
+
+.gradient-text {
+  background: linear-gradient(135deg, hsl(220, 90%, 56%) 0%, hsl(170, 80%, 50%) 50%, hsl(270, 76%, 53%) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, hsl(220, 90%, 56%) 0%, hsl(240, 80%, 55%) 100%);
+  color: white;
+  padding: 0.75rem 2rem;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px hsla(220, 90%, 56%, 0.4);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: hsl(210, 40%, 96%);
+  padding: 0.75rem 2rem;
+  border: 1px solid hsla(0, 0%, 100%, 0.15);
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-secondary:hover {
+  background: hsla(220, 40%, 18%, 0.5);
+  border-color: hsl(220, 90%, 56%);
+  transform: translateY(-2px);
+}
+
+.card-hover {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  border-color: hsla(220, 90%, 56%, 0.3);
+  box-shadow: 0 8px 40px hsla(220, 90%, 56%, 0.15);
+}
+
+
+/* ══════════════════════════════════════════════════════
+   ACCESSIBILITY
+   Added at the release gate: the app previously shipped with no visible focus indicator
+   anywhere, which makes it unusable by keyboard and fails WCAG 2.4.7.
+   ══════════════════════════════════════════════════════ */
+
+/* One consistent focus ring on every interactive element. :focus-visible (not :focus) so mouse
+   users never see it, but keyboard and screen-reader users always do. */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* The dark glass surfaces wash out the default ring; brighten it there. */
+.glass :focus-visible,
+.glass-light :focus-visible,
+.glass-strong :focus-visible {
+  outline-color: hsl(var(--accent));
+}
+
+/* Disabled controls must not look interactive. */
+:where(button, a, input, textarea)[disabled],
+:where(button, a)[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* Skip link — first tab stop on every page, lets keyboard users bypass the nav. */
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -4rem;
+  z-index: 100;
+  padding: 0.6rem 1rem;
+  border-radius: 0 0 10px 10px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: top 0.2s ease;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* Screen-reader-only text that still reaches assistive tech. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Respect the OS "reduce motion" setting. The particle field, aurora glow, card lifts and
+   framer-motion transitions are decorative; for users with vestibular sensitivity they are a
+   barrier. Content stays fully readable — only the movement stops. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .card-hover:hover,
+  .btn-primary:hover,
+  .btn-secondary:hover {
+    transform: none;
+  }
+}

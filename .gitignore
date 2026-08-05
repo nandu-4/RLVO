@@ -34,3 +34,6 @@ __pycache__/
 
 # Archives
 rlvo.zip
+
+.vercel
+.env*
