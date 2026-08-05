@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ErrorBoundary from "@/components/truthlens/ErrorBoundary";
+import { AuthProvider } from "@/integrations/auth";
 import RouteFallback from "@/components/truthlens/RouteFallback";
 
 // The landing page is the entry point, so it stays in the main bundle. Every other route is split
@@ -13,11 +14,13 @@ import RouteFallback from "@/components/truthlens/RouteFallback";
 import TruthLensHome from "./pages/TruthLensHome";
 
 const TruthLensVerify = lazy(() => import("./pages/TruthLensVerify"));
-const TruthLensBatch = lazy(() => import("./pages/TruthLensBatch"));
 const TruthLensReview = lazy(() => import("./pages/TruthLensReview"));
 const TruthLensDashboard = lazy(() => import("./pages/TruthLensDashboard"));
 const TruthLensBenchmark = lazy(() => import("./pages/TruthLensBenchmark"));
 const TruthLensAdmin = lazy(() => import("./pages/TruthLensAdmin"));
+
+// Batch verification is intentionally not routed: the page and its API remain in the tree so the
+// feature can be restored, but an unfinished surface must not be reachable.
 
 // RLVO research demos — kept reachable so existing links do not break, but no longer part of the
 // TruthLens product surface or its primary navigation.
@@ -34,7 +37,8 @@ const queryClient = new QueryClient({
 
 const App = () => (
   <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
+    <AuthProvider>
+      <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
         <Sonner />
@@ -44,7 +48,6 @@ const App = () => (
               {/* TruthLens AI Enterprise Routes */}
               <Route path="/" element={<TruthLensHome />} />
               <Route path="/verify" element={<TruthLensVerify />} />
-              <Route path="/batch" element={<TruthLensBatch />} />
               <Route path="/review" element={<TruthLensReview />} />
               <Route path="/dashboard" element={<TruthLensDashboard />} />
               <Route path="/benchmark" element={<TruthLensBenchmark />} />
@@ -61,7 +64,8 @@ const App = () => (
           </Suspense>
         </BrowserRouter>
       </TooltipProvider>
-    </QueryClientProvider>
+      </QueryClientProvider>
+    </AuthProvider>
   </ErrorBoundary>
 );
 

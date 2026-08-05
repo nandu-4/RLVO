@@ -1,17 +1,15 @@
 import { clientSafeError, errorMessage, sendJson } from "./_gemini.js";
 import {
-  assertDocumentInWorkspace,
+  assertDocumentOwned,
+  demoModeReason,
   httpError,
   isUuid,
   logActivity,
-  persistenceConfigured,
-  resolveWorkspace,
+  resolveIdentity,
   restJson,
   statusOf,
   supabaseRest,
-  unavailableReason,
-  workspaceToken,
-} from "./_workspace.js";
+} from "./_identity.js";
 import { callerKey, rateLimit } from "./_ratelimit.js";
 
 export const maxDuration = 15;
@@ -41,15 +39,11 @@ export default async function handler(req: any, res: any) {
   const startedAt = Date.now();
 
   try {
-    if (!persistenceConfigured()) {
-      return sendJson(res, 503, { error: unavailableReason(false) });
-    }
-    const workspace = await resolveWorkspace(req, { create: false });
-    if (!workspace) {
-      return sendJson(res, 401, { error: unavailableReason(Boolean(workspaceToken(req))) });
-    }
+    // Reviewer identity comes from the verified session, never from the request body.
+    const identity = await resolveIdentity(req);
+    if (!identity) return sendJson(res, 401, { error: demoModeReason() });
 
-    const limit = rateLimit(callerKey(req, workspace.id), 60, 60_000);
+    const limit = rateLimit(callerKey(req, identity.userId), 60, 60_000);
     if (!limit.allowed) {
       res.setHeader("Retry-After", String(limit.retryAfterSeconds));
       return sendJson(res, 429, { error: `Rate limit exceeded. Retry in ${limit.retryAfterSeconds}s.` });
@@ -68,7 +62,7 @@ export default async function handler(req: any, res: any) {
     }
     if (!isUuid(claimId)) throw httpError(400, "claimId must be a persisted UUID.");
 
-    await assertDocumentInWorkspace(documentId, workspace);
+    await assertDocumentOwned(documentId, identity);
 
     const claims = await restJson<Array<{ id: string; field_name: string; original_value: string; verified_value: string | null; status: string; trust_score: number }>>(
       `claims?id=eq.${claimId}&document_id=eq.${documentId}&select=id,field_name,original_value,verified_value,status,trust_score&limit=1`,
@@ -76,13 +70,16 @@ export default async function handler(req: any, res: any) {
     const claim = claims[0];
     if (!claim) throw httpError(404, "Claim not found on this document.");
 
-    const reviewerName = sanitizeName(decision.reviewerName);
+    // The session is the source of truth; a client-supplied name is ignored entirely.
+    const reviewerName = identity.name;
 
     const [record] = await write<Array<{ id: string; created_at: string }>>("review_decisions", {
       document_id: documentId,
       claim_id: claimId,
       decision: decision.status,
       reviewer_name: reviewerName,
+      reviewer_user_id: identity.userId,
+      reviewer_email: identity.email,
       reviewer_notes: decision.reviewerNotes?.trim().slice(0, 2000) || null,
       override_value: decision.overrideValue?.trim().slice(0, 1000) || null,
     });
@@ -103,6 +100,8 @@ export default async function handler(req: any, res: any) {
         status: finalStatus,
         trust_score: claim.trust_score,
         reviewer_name: reviewerName,
+        reviewer_user_id: identity.userId,
+        reviewer_email: identity.email,
         reviewer_notes: decision.reviewerNotes?.trim().slice(0, 2000) || null,
       },
       "return=minimal",
@@ -119,10 +118,16 @@ export default async function handler(req: any, res: any) {
     await supabaseRest(`review_tasks?claim_id=eq.${claimId}&status=neq.resolved`, {
       method: "PATCH",
       headers: { Prefer: "return=minimal" },
-      body: JSON.stringify({ status: "resolved", assigned_name: reviewerName, resolved_at: new Date().toISOString() }),
+      body: JSON.stringify({
+        status: "resolved",
+        assigned_name: reviewerName,
+        assigned_user_id: identity.userId,
+        assigned_email: identity.email,
+        resolved_at: new Date().toISOString(),
+      }),
     });
 
-    void logActivity(workspace.id, {
+    void logActivity(identity, {
       route: "review-claim",
       action: `${reviewerName} ${decision.status} "${claim.field_name}"`,
       statusCode: 201,
@@ -134,6 +139,7 @@ export default async function handler(req: any, res: any) {
         id: record.id,
         status: decision.status,
         reviewerName,
+        reviewerEmail: identity.email,
         finalValue,
         finalStatus,
         createdAt: record.created_at,
@@ -142,11 +148,6 @@ export default async function handler(req: any, res: any) {
   } catch (error) {
     return sendJson(res, statusOf(error, 500), { error: clientSafeError(error, "review").message });
   }
-}
-
-function sanitizeName(value: unknown): string {
-  const name = String(value ?? "").trim().slice(0, 80);
-  return name.length > 0 ? name : "Anonymous reviewer";
 }
 
 async function documentName(documentId: string): Promise<string> {

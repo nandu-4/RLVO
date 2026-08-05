@@ -31,11 +31,11 @@ import ClaimRelationGraph from "@/components/truthlens/ClaimRelationGraph";
 import { invokeAi } from "@/integrations/aiClient";
 import { Claim, ClaimStatus, HumanFeedback, VerificationResult } from "@/types/truthlens";
 import { withPreference } from "@/lib/visionProviders";
+import { prepareDocument, ACCEPTED_EXTENSIONS, ACCEPTED_PATTERN, type PreparedDocument } from "@/lib/documentInput";
 
 type Phase = "upload" | "processing" | "results";
 
-const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
-const ACCEPTED = /\.(pdf|png|jpe?g|webp)$/i;
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // PDFs are rasterised client-side, so the source may be larger
 
 export default function TruthLensVerify() {
   const [phase, setPhase] = useState<Phase>("upload");
@@ -57,25 +57,37 @@ export default function TruthLensVerify() {
   const [extracting, setExtracting] = useState(false);
   /** Set when the claims came from the document itself rather than another AI system. */
   const [selfExtracted, setSelfExtracted] = useState(false);
+  /** Pages rendered from the upload. A PDF becomes images here so the pipeline sees only images. */
+  const [prepared, setPrepared] = useState<PreparedDocument | null>(null);
+  const [preparing, setPreparing] = useState(false);
 
-  const isPdf = Boolean(file && /\.pdf$/i.test(file.name));
-  // Thumbnails still need a raster; the evidence viewer renders PDFs itself via pdf.js.
-  const imagePreview = preview && !isPdf ? preview : null;
+  // Everything downstream is an image: page 1 of the prepared document drives both the thumbnail
+  // and the evidence viewer, so there is no PDF branch anywhere past intake.
+  const imagePreview = prepared?.pages[0]?.dataUrl ?? null;
 
-  const handleFile = useCallback((f: File) => {
+  const handleFile = useCallback(async (f: File) => {
     setVerificationError(null);
-    if (!ACCEPTED.test(f.name)) {
-      setVerificationError("Unsupported file type. Upload a PDF, PNG, JPEG, or WebP document.");
+    if (!ACCEPTED_PATTERN.test(f.name)) {
+      setVerificationError("Unsupported file type. Upload a PDF, PNG, JPG, JPEG, WebP or TIFF document.");
       return;
     }
     if (f.size > MAX_UPLOAD_BYTES) {
-      setVerificationError(`${(f.size / 1024 / 1024).toFixed(1)} MB exceeds the 4 MB request limit. Reduce the resolution or split the document.`);
+      setVerificationError(`${(f.size / 1024 / 1024).toFixed(1)} MB exceeds the 8 MB limit. Reduce the resolution or split the document.`);
       return;
     }
     setFile(f);
-    const reader = new FileReader();
-    reader.onload = (e) => setPreview(e.target?.result as string);
-    reader.readAsDataURL(f);
+    setPreparing(true);
+    try {
+      const document = await prepareDocument(f);
+      setPrepared(document);
+      setPreview(document.pages[0]?.dataUrl ?? null);
+    } catch (error) {
+      setVerificationError(error instanceof Error ? error.message : "This document could not be prepared.");
+      setFile(null);
+      setPrepared(null);
+    } finally {
+      setPreparing(false);
+    }
   }, []);
 
   const handleDrop = useCallback(
@@ -83,7 +95,7 @@ export default function TruthLensVerify() {
       e.preventDefault();
       setDragOver(false);
       const f = e.dataTransfer.files?.[0];
-      if (f) handleFile(f);
+      if (f) void handleFile(f);
     },
     [handleFile]
   );
@@ -94,13 +106,15 @@ export default function TruthLensVerify() {
    * claims — they are candidates for the user to correct, never an answer.
    */
   const extractClaims = useCallback(async () => {
-    if (!file || !preview) return;
+    if (!file || !prepared) return;
     setExtracting(true);
     setVerificationError(null);
 
+    const page = prepared?.pages[0];
+    if (!page) return;
     const { data, error } = await invokeAi<{ claims: Array<{ field: string; value: string }>; caveat: string }>(
       "extract-claims",
-      withPreference({ image: preview, fileName: file.name }),
+      withPreference({ image: page.dataUrl, fileName: prepared.fileName }),
     );
 
     if (error || !data?.claims?.length) {
@@ -110,7 +124,7 @@ export default function TruthLensVerify() {
       setSelfExtracted(true);
     }
     setExtracting(false);
-  }, [file, preview]);
+  }, [file, prepared]);
 
   const startVerification = useCallback(async () => {
     if (!file) return;
@@ -138,18 +152,22 @@ export default function TruthLensVerify() {
     setPhase("processing");
     setReviewError(null);
 
-    let base64Data = preview;
-    if (!base64Data) {
-      base64Data = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.readAsDataURL(file);
-      });
+    const page = prepared?.pages[0];
+    if (!page) {
+      setVerificationError("The document is still being prepared. Try again in a moment.");
+      setPhase("upload");
+      return;
     }
 
     const { data, error } = await invokeAi<VerificationResult>(
       "verify-document",
-      withPreference({ image: base64Data, fileName: file.name, upstreamClaims }),
+      withPreference({
+        image: page.dataUrl,
+        fileName: prepared.fileName,
+        upstreamClaims,
+        // Tells the server which verification path this is, so the result records it honestly.
+        selfExtracted,
+      }),
     );
 
     if (error || !data?.claims?.length) {
@@ -162,12 +180,13 @@ export default function TruthLensVerify() {
     setSelectedClaim(null);
     setVerificationError(null);
     setPhase("results");
-  }, [file, preview, upstreamClaimsText]);
+  }, [file, prepared, upstreamClaimsText, selfExtracted]);
 
   const reset = () => {
     setPhase("upload");
     setFile(null);
     setPreview(null);
+    setPrepared(null);
     setResult(null);
     setSelectedClaim(null);
     setStatusFilter("all");
@@ -292,10 +311,10 @@ export default function TruthLensVerify() {
                     if (!file) {
                       const input = document.createElement("input");
                       input.type = "file";
-                      input.accept = ".pdf,.png,.jpg,.jpeg,.webp";
+                      input.accept = ACCEPTED_EXTENSIONS;
                       input.onchange = (e) => {
                         const f = (e.target as HTMLInputElement).files?.[0];
-                        if (f) handleFile(f);
+                        if (f) void handleFile(f);
                       };
                       input.click();
                     }
@@ -308,7 +327,7 @@ export default function TruthLensVerify() {
                       </div>
                       <p className="text-xl font-bold mb-2">Drop document to verify claims</p>
                       <p className="text-xs text-muted-foreground mb-6 max-w-sm">
-                        PDF, PNG, JPEG or WebP · up to 4 MB · any document type
+                        PDF, PNG, JPG, WebP or TIFF · up to 8 MB · any document type
                       </p>
                       <span className="btn-secondary py-2 px-5 text-xs font-semibold">Browse File</span>
                     </>
@@ -320,14 +339,28 @@ export default function TruthLensVerify() {
                         ) : (
                           <div className="w-20 h-20 rounded-xl bg-surface-light flex flex-col items-center justify-center shrink-0 gap-1">
                             <FileText className="w-7 h-7 text-primary" />
-                            {isPdf && <span className="text-[9px] font-bold text-muted-foreground">PDF</span>}
+                            
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
                           <p className="font-bold truncate text-base">{file.name}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{(file.size / 1024).toFixed(1)} KB</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {(file.size / 1024).toFixed(1)} KB
+                            {prepared?.converted && ` · ${prepared.pages.length} page(s) rendered to images`}
+                          </p>
+                          {prepared?.truncatedFrom && (
+                            <p className="text-[10px] text-warning mt-1">
+                              Only the first {prepared.pages.length} of {prepared.truncatedFrom} pages will be verified.
+                            </p>
+                          )}
                           <div className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-success bg-success/10 px-2 py-0.5 rounded mt-2">
-                            <ShieldCheck className="w-3 h-3" /> Ready to verify
+                            {preparing ? (
+                              <>Preparing document…</>
+                            ) : (
+                              <>
+                                <ShieldCheck className="w-3 h-3" /> Ready to verify
+                              </>
+                            )}
                           </div>
                         </div>
                         <button
@@ -341,6 +374,32 @@ export default function TruthLensVerify() {
                         >
                           <X className="w-5 h-5" />
                         </button>
+                      </div>
+
+                      {/* The mode is stated before the user types, not discovered afterwards. */}
+                      <div
+                        className={`text-left mb-3 rounded-xl p-3 border ${
+                          selfExtracted ? "border-warning/40 bg-warning/5" : "border-primary/30 bg-primary/5"
+                        }`}
+                      >
+                        <p className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          {selfExtracted ? (
+                            <>
+                              <Wand2 className="w-3.5 h-3.5 text-warning" />
+                              <span className="text-warning">Self-check mode</span>
+                            </>
+                          ) : (
+                            <>
+                              <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+                              <span className="text-primary">Cross-check mode</span>
+                            </>
+                          )}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                          {selfExtracted
+                            ? "TruthLens proposed these claims itself. Both passes share a failure mode, so this is weaker evidence — edit anything that looks wrong, or paste an external AI's output instead."
+                            : "Paste what ChatGPT, Claude, Gemini or any vision model said about this document. TruthLens independently retrieves evidence and never trusts those claims."}
+                        </p>
                       </div>
 
                       <div className="text-left mb-4">
@@ -374,19 +433,6 @@ export default function TruthLensVerify() {
                           said about this document — TruthLens checks those statements against evidence and will not invent claims.
                         </p>
 
-                        {/* Self-check is weaker evidence than checking another system, and the UI
-                            has to say so rather than let the mode look equivalent. */}
-                        {selfExtracted && (
-                          <div className="mt-2 glass-light rounded-lg p-2.5 border border-warning/40 flex items-start gap-2">
-                            <Info className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" />
-                            <p className="text-[10px] text-muted-foreground leading-relaxed">
-                              <span className="font-semibold text-warning">Self-check mode.</span> These claims were proposed by
-                              the same model family that will verify them, so both passes share a failure mode — a fact misread
-                              identically twice will still verify cleanly. Edit anything that looks wrong. Checking a different
-                              system's output is stronger evidence.
-                            </p>
-                          </div>
-                        )}
                       </div>
 
                       <button
@@ -394,7 +440,8 @@ export default function TruthLensVerify() {
                           e.stopPropagation();
                           startVerification();
                         }}
-                        className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2 relative z-10 font-bold"
+                        disabled={preparing || !prepared}
+                        className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2 relative z-10 font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Shield className="w-5 h-5" /> Execute Enterprise Verification <ArrowRight className="w-5 h-5" />
                       </button>
@@ -419,19 +466,33 @@ export default function TruthLensVerify() {
                   <Loader2 className="w-10 h-10 text-primary animate-spin" />
                 </div>
                 <h2 className="text-2xl font-bold mb-2">Verifying against document evidence</h2>
-                <p className="text-xs text-muted-foreground mb-6 max-w-sm mx-auto leading-relaxed">
-                  The document and your upstream claims are with the vision provider now. This usually takes
-                  5–30 seconds depending on page count. Measured stage timings appear with the result.
+                <p className="text-xs text-muted-foreground mb-4 max-w-sm mx-auto leading-relaxed">
+                  {selfExtracted
+                    ? "Self-check: the claims TruthLens proposed are being checked against independently retrieved evidence."
+                    : "Cross-check: your AI's claims are being checked against evidence retrieved independently from the document."}
                 </p>
-                <GlassCard hover={false} className="p-5 text-left">
-                  <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
-                    <Cpu className="w-4 h-4 text-primary shrink-0" />
-                    <span>
-                      Claims are never invented: any claim without retrievable page-level evidence is returned as
-                      <span className="text-accent font-semibold"> needs review</span> rather than a guess.
-                    </span>
-                  </div>
+
+                {/* Indeterminate, but shaped like the real pipeline so the wait reads as progress. */}
+                <div className="h-1 rounded-full bg-surface-dark overflow-hidden progress-sweep mb-6" role="progressbar" aria-label="Verification in progress" />
+
+                <GlassCard hover={false} className="p-5 text-left space-y-2.5">
+                  {[
+                    "Reading the page — text, coordinates and confidence",
+                    "Searching the document for evidence, without a model",
+                    "Predicting hallucination risk before any verdict",
+                    "Checking each claim against retrieved evidence only",
+                  ].map((step) => (
+                    <div key={step} className="flex items-start gap-2.5 text-[11px] text-muted-foreground">
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary/60 mt-1.5 shrink-0" />
+                      <span className="leading-relaxed">{step}</span>
+                    </div>
+                  ))}
                 </GlassCard>
+                <p className="text-[11px] text-muted-foreground mt-4 flex items-center justify-center gap-2">
+                  <Cpu className="w-3.5 h-3.5 text-primary shrink-0" />
+                  Any claim without retrievable evidence is returned as
+                  <span className="text-accent font-semibold">needs review</span>, never a guess.
+                </p>
               </motion.div>
             )}
 
@@ -443,7 +504,7 @@ export default function TruthLensVerify() {
                   <div>
                     <span className="text-[10px] uppercase font-bold text-primary tracking-widest block">Verified Document Context</span>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="text-lg font-bold text-foreground">{result.fileName}</h2>
+                      <h2 className="text-lg font-bold text-foreground break-anywhere">{result.fileName}</h2>
                       <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-primary/20 text-primary border border-primary/30">
                         {result.documentType}
                       </span>
@@ -453,6 +514,32 @@ export default function TruthLensVerify() {
                       >
                         {result.modelUsed}
                       </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                          result.verificationMode === "self-check"
+                            ? "bg-warning/15 text-warning border-warning/30"
+                            : "bg-primary/15 text-primary border-primary/30"
+                        }`}
+                        title={
+                          result.verificationMode === "self-check"
+                            ? "Claims were proposed by TruthLens itself — weaker evidence than checking another system."
+                            : "Claims came from an external AI system and were independently verified."
+                        }
+                      >
+                        {result.verificationMode === "self-check" ? "Self-check" : "Cross-check"}
+                      </span>
+                      {result.ocr && (
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-mono border ${
+                            result.ocr.engine === "paddleocr"
+                              ? "bg-success/10 text-success border-success/30"
+                              : "bg-surface-light text-muted-foreground border-border"
+                          }`}
+                          title={result.ocr.degradedReason ?? "Deterministic OCR: the same page always yields the same text and coordinates."}
+                        >
+                          {result.ocr.engine === "paddleocr" ? "PaddleOCR" : "model OCR"}
+                        </span>
+                      )}
                       {result.failover && result.failover.length > 0 && (
                         <span
                           className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-warning/15 text-warning border border-warning/30"
@@ -473,7 +560,7 @@ export default function TruthLensVerify() {
                   <div className="mb-6 glass-light rounded-xl p-3.5 border border-warning/40 flex items-start gap-2.5">
                     <Lock className="w-4 h-4 text-warning shrink-0 mt-0.5" />
                     <div className="text-xs">
-                      <span className="font-semibold text-warning">Not stored · review disabled</span>
+                      <span className="font-semibold text-warning">Demo mode · not stored</span>
                       <p className="text-muted-foreground mt-0.5 leading-relaxed">{result.persistence.reason}</p>
                     </div>
                   </div>

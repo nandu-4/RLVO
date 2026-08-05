@@ -301,3 +301,79 @@ All colors MUST be HSL.
     transform: none;
   }
 }
+
+/* ══════════════════════════════════════════════════════
+   PREMIUM POLISH
+   Micro-interactions and type rhythm. Nothing here changes the theme, the glass treatment or
+   the palette — it tightens what was already there.
+   ══════════════════════════════════════════════════════ */
+
+/* Tabular figures everywhere a number can change in place, so trust scores and timings do not
+   jitter horizontally as they update. */
+.tabular-nums,
+[class*="font-mono"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Headings: tighter tracking at display sizes reads as considered rather than default. */
+h1, h2 {
+  letter-spacing: -0.02em;
+}
+
+/* Buttons acknowledge the press. 60ms is below the threshold where it reads as lag. */
+.btn-primary:active:not(:disabled),
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(0) scale(0.985);
+  transition-duration: 60ms;
+}
+
+/* Skeleton shimmer for content that is genuinely arriving, so a wait looks intentional. */
+@keyframes tl-shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted) / 0.35) 25%,
+    hsl(var(--muted) / 0.55) 37%,
+    hsl(var(--muted) / 0.35) 63%
+  );
+  background-size: 800px 100%;
+  animation: tl-shimmer 1.4s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* The verification progress sweep: a determinate-looking bar for an indeterminate wait. */
+@keyframes tl-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.progress-sweep {
+  position: relative;
+  overflow: hidden;
+}
+.progress-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 25%;
+  background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.55), transparent);
+  animation: tl-sweep 1.6s ease-in-out infinite;
+}
+
+/* Long values (file names, model ids, evidence text) must wrap rather than push a card wide. */
+.break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Cards settle rather than snap when content height changes between states. */
+.glass, .glass-light {
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton, .progress-sweep::after { animation: none; }
+  .progress-sweep::after { display: none; }
+}

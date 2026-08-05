@@ -5,3 +5,7 @@ numpy>=1.24.0
 ultralytics>=8.1.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
+paddleocr>=2.7
+paddlepaddle>=2.6
+pypdfium2>=4
+pillow>=10

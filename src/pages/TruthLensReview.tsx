@@ -6,6 +6,8 @@ import GlassCard from "@/components/truthlens/GlassCard";
 import ParticleBackground from "@/components/truthlens/ParticleBackground";
 import MouseGlow from "@/components/truthlens/MouseGlow";
 import { invokeAi } from "@/integrations/aiClient";
+import { useAuth } from "@/integrations/auth";
+import { SignInRequired } from "@/components/truthlens/AccountMenu";
 
 interface Task {
   id: string;
@@ -36,8 +38,6 @@ interface Queue {
   tasks: Task[];
 }
 
-const REVIEWER_KEY = "truthlens.reviewer_name";
-
 /**
  * Cross-document review queue.
  *
@@ -50,17 +50,9 @@ export default function TruthLensReview() {
   const [queue, setQueue] = useState<Queue | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"open" | "assigned" | "resolved" | "all">("open");
-  const [reviewer, setReviewer] = useState("");
   const [busyTask, setBusyTask] = useState<string | null>(null);
+  const { user, loading: authLoading } = useAuth();
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      setReviewer(window.localStorage.getItem(REVIEWER_KEY) ?? "");
-    } catch {
-      /* storage unavailable */
-    }
-  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,25 +66,14 @@ export default function TruthLensReview() {
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  const saveReviewer = (name: string) => {
-    setReviewer(name);
-    try {
-      window.localStorage.setItem(REVIEWER_KEY, name);
-    } catch {
-      /* storage unavailable */
-    }
-  };
+    if (user) void load();
+    else setLoading(false);
+  }, [user, load]);
 
   const assign = async (task: Task, action: "assign" | "unassign") => {
-    if (action === "assign" && !reviewer.trim()) {
-      setError("Enter your reviewer name first — it is recorded on the audit trail.");
-      return;
-    }
     setBusyTask(task.id);
-    const { error } = await invokeAi("review-queue", { action, taskId: task.id, assignedName: reviewer.trim() });
+    // No name to supply: the server takes the reviewer from the verified session.
+    const { error } = await invokeAi("review-queue", { action, taskId: task.id });
     if (error) setError(error.message);
     else {
       setError(null);
@@ -119,18 +100,20 @@ export default function TruthLensReview() {
                 Claims the engine would not decide automatically, across every document in this workspace.
               </p>
             </div>
-            <button onClick={load} disabled={loading} className="btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5 disabled:opacity-50">
+            {user && <button onClick={load} disabled={loading} className="btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5 disabled:opacity-50">
               {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Refresh
-            </button>
+            </button>}
           </div>
 
           {error && <GlassCard hover={false} className="p-3.5 mb-5 border-danger/40"><p className="text-xs text-danger">{error}</p></GlassCard>}
 
-          {loading && !queue && (
+          {!authLoading && !user && <SignInRequired feature="The review queue" />}
+
+          {user && loading && !queue && (
             <GlassCard hover={false} className="p-12 text-center"><Loader2 className="w-8 h-8 text-primary mx-auto animate-spin" /></GlassCard>
           )}
 
-          {queue && !queue.available && (
+          {user && queue && !queue.available && (
             <GlassCard hover={false} className="p-10 text-center max-w-3xl mx-auto">
               <Database className="w-10 h-10 text-primary mx-auto mb-4" />
               <h2 className="text-lg font-bold">The review queue needs a stored workspace</h2>
@@ -138,25 +121,24 @@ export default function TruthLensReview() {
             </GlassCard>
           )}
 
-          {queue?.available && (
+          {user && queue?.available && (
             <>
               <GlassCard hover={false} className="p-4 mb-6">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  <div className="flex-1">
-                    <label className="block text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-1.5">
-                      Your reviewer name
-                    </label>
-                    <input
-                      value={reviewer}
-                      onChange={(event) => saveReviewer(event.target.value)}
-                      placeholder="e.g. Nandini"
-                      className="glass-light px-3 py-2 rounded-lg text-xs border border-border bg-transparent w-full max-w-xs focus:outline-none focus:border-primary"
-                    />
-                    {/* Naming the limitation where the name is entered, not in a footnote. */}
-                    <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
-                      Recorded on the audit trail. With no accounts this is self-declared — it captures who
-                      <em> said</em> they made a decision, not a verified identity.
-                    </p>
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    {user?.avatarUrl ? (
+                      <img src={user.avatarUrl} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                    ) : (
+                      <span className="w-9 h-9 rounded-lg bg-primary/15 text-primary flex items-center justify-center text-sm font-bold shrink-0">
+                        {(user?.name ?? "?").slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-foreground truncate">Reviewing as {user?.name}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">
+                        {user?.email} · recorded on every decision you make
+                      </p>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-wrap">

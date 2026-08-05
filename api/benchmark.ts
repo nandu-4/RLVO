@@ -3,7 +3,7 @@ import { parseUpstreamClaims } from "./_truthlens.js";
 import { runPipeline } from "./_pipeline.js";
 import { benchmarkTargets } from "./_providers/index.js";
 import type { DocumentPayload } from "./_providers/types.js";
-import { logActivity, persistenceConfigured, resolveWorkspace, statusOf, supabaseRest } from "./_workspace.js";
+import { logActivity, resolveIdentity, statusOf, supabaseRest } from "./_identity.js";
 import { callerKey, rateLimit } from "./_ratelimit.js";
 
 export const maxDuration = 60;
@@ -41,9 +41,9 @@ export default async function handler(req: any, res: any) {
       return sendJson(res, 400, { error: "upstreamClaims is required — the benchmark measures how each model verifies the same claims." });
     }
 
-    const workspace = persistenceConfigured() ? await resolveWorkspace(req).catch(() => null) : null;
+    const identity = await resolveIdentity(req).catch(() => null);
 
-    const limit = rateLimit(callerKey(req, workspace?.id), 3, 300_000);
+    const limit = rateLimit(callerKey(req, identity?.userId), 3, 300_000);
     if (!limit.allowed) {
       res.setHeader("Retry-After", String(limit.retryAfterSeconds));
       return sendJson(res, 429, { error: `Benchmark runs are limited. Retry in ${limit.retryAfterSeconds}s.` });
@@ -126,8 +126,8 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    if (workspace) void storeBenchmark(workspace.id, runId, results);
-    void logActivity(workspace?.id ?? null, {
+    if (identity) void storeBenchmark(identity.userId, runId, results);
+    void logActivity(identity, {
       route: "benchmark",
       action: `Benchmarked ${results.length} model(s) on ${fileName}`,
       statusCode: 200,
@@ -154,11 +154,11 @@ export default async function handler(req: any, res: any) {
 const pct = (part: number, whole: number) => (whole === 0 ? 0 : Math.round((part / whole) * 1000) / 10);
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
-async function storeBenchmark(workspaceId: string, runId: string, results: Array<Record<string, any>>) {
+async function storeBenchmark(userId: string, runId: string, results: Array<Record<string, any>>) {
   const rows = results
     .filter((result) => result.available && !result.error && !result.skipped)
     .map((result) => ({
-      organization_id: workspaceId,
+      user_id: userId,
       run_id: runId,
       provider_id: result.id,
       model_label: result.label,

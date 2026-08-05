@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parseJson } from "../api/_gemini.js";
 import { rateLimit, callerKey } from "../api/_ratelimit.js";
-import { isUuid } from "../api/_workspace.js";
+import { isUuid } from "../api/_identity.js";
 
 /**
  * Regression suite for the envelope-drift bug.

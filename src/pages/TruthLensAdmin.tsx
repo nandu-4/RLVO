@@ -5,8 +5,9 @@ import GlassCard from "@/components/truthlens/GlassCard";
 import ParticleBackground from "@/components/truthlens/ParticleBackground";
 import MouseGlow from "@/components/truthlens/MouseGlow";
 import { invokeAi } from "@/integrations/aiClient";
-import { forgetWorkspace, replaceWorkspaceToken, workspaceToken } from "@/lib/workspace";
 import { readPreference, writePreference } from "@/lib/visionProviders";
+import { useAuth } from "@/integrations/auth";
+import { SignInRequired } from "@/components/truthlens/AccountMenu";
 import { cn } from "@/lib/utils";
 
 type Tab = "workspace" | "models" | "rules" | "compliance" | "activity";
@@ -22,7 +23,7 @@ interface Status {
   available: boolean;
   reason?: string;
   activeModel?: string;
-  workspace?: { id: string; name: string; retentionDays: number; documentCount: number; oldestDocumentAt: string | null; expiredAwaitingPurge: number };
+  account?: { id: string; name: string; email: string; avatarUrl: string | null; retentionDays: number; documentCount: number; oldestDocumentAt: string | null; expiredAwaitingPurge: number };
   providers?: Array<{ id: string; label: string; vendor: string; keyVar: string; configured: boolean; models: string[]; defaultModel: string }>;
   benchmarkTargets?: Array<{ id: string; label: string; vendor: string; available: boolean; reason?: string }>;
   compliance?: { controls: Control[]; caveat: string };
@@ -30,11 +31,11 @@ interface Status {
 
 interface ActivityLog {
   apiActivity: Array<{ id: string; route: string; action: string; statusCode: number; durationMs: number | null; createdAt: string }>;
-  reviewDecisions: Array<{ id: string; decision: string; reviewerName: string; reviewerNotes: string | null; documentName: string; createdAt: string }>;
+  reviewDecisions: Array<{ id: string; decision: string; reviewerName: string; reviewerEmail: string | null; reviewerNotes: string | null; documentName: string; createdAt: string }>;
 }
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: "workspace", label: "Workspace", icon: <Key className="w-4 h-4" /> },
+  { id: "workspace", label: "Account", icon: <Key className="w-4 h-4" /> },
   { id: "models", label: "Models", icon: <Brain className="w-4 h-4" /> },
   { id: "rules", label: "Rules", icon: <Shield className="w-4 h-4" /> },
   { id: "compliance", label: "Compliance", icon: <Settings className="w-4 h-4" /> },
@@ -53,10 +54,10 @@ export default function TruthLensAdmin() {
   const [activity, setActivity] = useState<ActivityLog | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
-  const [name, setName] = useState("");
   const [retention, setRetention] = useState(30);
   const [tokenVisible, setTokenVisible] = useState(false);
   const [preference, setPreference] = useState(readPreference);
+  const { user } = useAuth();
   const [importValue, setImportValue] = useState("");
 
   const load = async () => {
@@ -64,8 +65,7 @@ export default function TruthLensAdmin() {
     const { data } = await invokeAi<Status>("workspace", { action: "status" });
     if (data) {
       setStatus(data);
-      setName(data.workspace?.name ?? "");
-      setRetention(data.workspace?.retentionDays ?? 30);
+      setRetention(data.account?.retentionDays ?? 30);
     }
     setLoading(false);
   };
@@ -83,10 +83,9 @@ export default function TruthLensAdmin() {
   const saveSettings = async () => {
     const { data, error } = await invokeAi<{ workspace: { name: string; retentionDays: number } }>("workspace", {
       action: "settings",
-      name,
       retentionDays: retention,
     });
-    setNotice(error ? error.message : `Saved. Retention now applies to all ${status?.workspace?.documentCount ?? 0} stored document(s).`);
+    setNotice(error ? error.message : "Saved. Retention now applies to every document already stored on your account.");
     if (data) void load();
   };
 
@@ -98,7 +97,6 @@ export default function TruthLensAdmin() {
     void load();
   };
 
-  const token = workspaceToken();
 
   return (
     <div className="min-h-screen flex flex-col aurora-bg text-foreground">
@@ -147,90 +145,66 @@ export default function TruthLensAdmin() {
             </div>
 
             <div className="flex-1 space-y-6">
-              {/* ── Workspace ── */}
+              {/* ── Account ── */}
               {activeTab === "workspace" && (
                 <>
-                  {!status?.available ? (
+                  {!user ? (
+                    <SignInRequired feature="Account settings" />
+                  ) : !status?.available ? (
                     <GlassCard hover={false} className="p-10 text-center">
                       <Database className="w-9 h-9 text-primary mx-auto mb-4" />
-                      <h3 className="text-base font-bold">Workspace storage is not configured</h3>
+                      <h3 className="text-base font-bold">Storage is not configured</h3>
                       <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-lg mx-auto">{status?.reason}</p>
                     </GlassCard>
                   ) : (
                     <>
                       <GlassCard hover={false}>
-                        <h3 className="text-sm font-semibold mb-1">Workspace settings</h3>
+                        <h3 className="text-sm font-semibold mb-1">Signed in account</h3>
                         <p className="text-[11px] text-muted-foreground mb-4">
-                          {status.workspace?.documentCount} document(s) stored
-                          {status.workspace?.oldestDocumentAt && ` · oldest ${new Date(status.workspace.oldestDocumentAt).toLocaleDateString()}`}
+                          Identity comes from your Google session. It is recorded on every review decision you make,
+                          so the audit trail names a verified person rather than a typed-in string.
                         </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                          <div>
-                            <label className="block text-muted-foreground mb-1.5">Workspace name</label>
-                            <input
-                              value={name}
-                              onChange={(event) => setName(event.target.value)}
-                              className="glass-light p-2.5 rounded-lg w-full bg-transparent border border-border text-foreground focus:outline-none focus:border-primary"
-                            />
+                        <div className="glass-light rounded-lg p-3 flex items-center gap-3">
+                          {user.avatarUrl ? (
+                            <img src={user.avatarUrl} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                          ) : (
+                            <span className="w-10 h-10 rounded-lg bg-primary/15 text-primary flex items-center justify-center text-sm font-bold">
+                              {user.name.slice(0, 1).toUpperCase()}
+                            </span>
+                          )}
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-foreground truncate">{user.name}</div>
+                            <div className="text-[11px] text-muted-foreground truncate">{user.email}</div>
                           </div>
+                        </div>
+                      </GlassCard>
+
+                      <GlassCard hover={false}>
+                        <h3 className="text-sm font-semibold mb-1">Data retention</h3>
+                        <p className="text-[11px] text-muted-foreground mb-4">
+                          {status.account?.documentCount ?? 0} document(s) stored
+                          {status.account?.oldestDocumentAt
+                            ? ` · oldest ${new Date(status.account.oldestDocumentAt).toLocaleDateString()}`
+                            : ""}
+                          . Changing this re-stamps every document already stored, not just future ones.
+                        </p>
+                        <div className="flex flex-wrap items-end gap-3 text-xs">
                           <div>
-                            <label className="block text-muted-foreground mb-1.5">Data retention (days)</label>
+                            <label htmlFor="retention" className="block text-muted-foreground mb-1.5">
+                              Keep verifications for (days)
+                            </label>
                             <input
+                              id="retention"
                               type="number"
                               min={1}
                               max={3650}
                               value={retention}
                               onChange={(event) => setRetention(Number(event.target.value))}
-                              className="glass-light p-2.5 rounded-lg w-full bg-transparent border border-border text-foreground focus:outline-none focus:border-primary"
+                              className="glass-light p-2.5 rounded-lg w-40 bg-transparent border border-border text-foreground focus:outline-none focus:border-primary"
                             />
                           </div>
-                        </div>
-                        <button onClick={saveSettings} className="btn-primary text-xs py-2 px-4 mt-4 relative z-10">Save settings</button>
-                      </GlassCard>
-
-                      <GlassCard hover={false}>
-                        <h3 className="text-sm font-semibold mb-1">Workspace key</h3>
-                        {/* The trade-off is stated here, not buried in docs — the user is the only one who can hold this. */}
-                        <p className="text-[11px] text-muted-foreground mb-3 leading-relaxed">
-                          TruthLens has no accounts. This key <em>is</em> your workspace: it is stored only in this
-                          browser, and the server keeps only its hash. Anyone holding it can read, review and erase this
-                          workspace, and if you lose it nothing can recover the data — we hold no identifier that could
-                          prove it was yours. Save it somewhere safe if this work matters, and do not use this mode for
-                          regulated personal or health data.
-                        </p>
-                        <div className="glass-light rounded-lg p-3 flex items-center gap-2 mb-3">
-                          <code className="text-[11px] font-mono flex-1 truncate">
-                            {tokenVisible ? token : "•".repeat(43)}
-                          </code>
-                          <button onClick={() => setTokenVisible((v) => !v)} className="text-[10px] text-primary font-semibold shrink-0">
-                            {tokenVisible ? "Hide" : "Reveal"}
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (token) void navigator.clipboard.writeText(token).then(() => setNotice("Workspace key copied to clipboard."));
-                            }}
-                            className="p-1.5 rounded hover:bg-surface-light text-muted-foreground shrink-0"
-                            title="Copy key"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          <input
-                            value={importValue}
-                            onChange={(event) => setImportValue(event.target.value)}
-                            placeholder="Paste a key to switch workspace…"
-                            className="glass-light px-3 py-2 rounded-lg text-xs border border-border bg-transparent flex-1 min-w-[220px] focus:outline-none focus:border-primary"
-                          />
-                          <button
-                            onClick={() => {
-                              if (replaceWorkspaceToken(importValue)) window.location.reload();
-                              else setNotice("That does not look like a valid workspace key.");
-                            }}
-                            className="btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5"
-                          >
-                            <Download className="w-3.5 h-3.5" /> Switch
+                          <button onClick={saveSettings} className="btn-primary text-xs py-2.5 px-4 relative z-10">
+                            Save
                           </button>
                         </div>
                       </GlassCard>
@@ -238,7 +212,8 @@ export default function TruthLensAdmin() {
                       <GlassCard hover={false}>
                         <h3 className="text-sm font-semibold mb-1">Data controls</h3>
                         <p className="text-[11px] text-muted-foreground mb-4">
-                          {status.workspace?.expiredAwaitingPurge ?? 0} document(s) are past their retention window and awaiting purge.
+                          {status.account?.expiredAwaitingPurge ?? 0} document(s) are past their retention window and
+                          awaiting purge.
                         </p>
                         <div className="flex flex-wrap gap-2">
                           <button
@@ -248,21 +223,10 @@ export default function TruthLensAdmin() {
                             <Trash2 className="w-3.5 h-3.5 text-warning" /> Apply retention now
                           </button>
                           <button
-                            onClick={() => runAction("erase", "Permanently delete EVERY document, claim, evidence record and audit entry in this workspace? This cannot be undone.")}
+                            onClick={() => runAction("erase", "Permanently delete EVERY document, claim, evidence record and audit entry on your account? This cannot be undone.")}
                             className="btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5"
                           >
-                            <Trash2 className="w-3.5 h-3.5 text-danger" /> Erase all workspace data
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (window.confirm("Forget this workspace key in this browser? The stored data stays on the server but becomes unreachable without the key.")) {
-                                forgetWorkspace();
-                                window.location.reload();
-                              }
-                            }}
-                            className="btn-secondary text-xs py-2 px-3.5"
-                          >
-                            Forget key on this device
+                            <Trash2 className="w-3.5 h-3.5 text-danger" /> Erase all my data
                           </button>
                         </div>
                       </GlassCard>
@@ -449,8 +413,8 @@ export default function TruthLensAdmin() {
                   <GlassCard hover={false}>
                     <h3 className="text-sm font-semibold mb-1">Human review decisions</h3>
                     <p className="text-[11px] text-muted-foreground mb-4">
-                      Reviewer names are self-declared — with no accounts, this records who <em>said</em> they made a
-                      decision, not a verified identity.
+                      Every decision records the signed-in reviewer's name and email from their verified Google
+                      session — not a self-declared string.
                     </p>
                     <div className="space-y-2 text-xs max-h-80 overflow-y-auto">
                       {(activity?.reviewDecisions ?? []).length === 0 ? (
@@ -463,7 +427,8 @@ export default function TruthLensAdmin() {
                               <span className="text-muted-foreground shrink-0">{new Date(entry.createdAt).toLocaleString()}</span>
                             </div>
                             <p className="text-muted-foreground mt-0.5">
-                              {entry.reviewerName} · {entry.documentName}
+                              {entry.reviewerName}
+                              {entry.reviewerEmail ? ` (${entry.reviewerEmail})` : ""} · {entry.documentName}
                             </p>
                             {entry.reviewerNotes && <p className="text-muted-foreground mt-1 italic">{entry.reviewerNotes}</p>}
                           </div>

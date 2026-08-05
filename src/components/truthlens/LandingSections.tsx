@@ -318,11 +318,14 @@ export function Footer() {
         </div>
         <div className="flex items-center gap-5 text-sm text-muted-foreground flex-wrap justify-center">
           <Link to="/verify" className="hover:text-foreground transition-colors">Verify</Link>
-          <Link to="/batch" className="hover:text-foreground transition-colors">Batch</Link>
           <Link to="/review" className="hover:text-foreground transition-colors">Review</Link>
           <Link to="/dashboard" className="hover:text-foreground transition-colors">Dashboard</Link>
           <Link to="/benchmark" className="hover:text-foreground transition-colors">Benchmark</Link>
           <Link to="/admin" className="hover:text-foreground transition-colors">Admin</Link>
+          <span className="w-px h-3 bg-border" aria-hidden="true" />
+          <Link to="/image-refinement" className="hover:text-foreground transition-colors">Image RLVO</Link>
+          <Link to="/video-refinement" className="hover:text-foreground transition-colors">Video RLVO</Link>
+          <Link to="/proctoring" className="hover:text-foreground transition-colors">Proctoring</Link>
         </div>
         <p className="text-xs text-muted-foreground">
           © 2025 TruthLens AI. The trust layer missing from modern AI.

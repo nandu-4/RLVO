@@ -6,11 +6,12 @@
  * foreign-key error that the UI never surfaced. Persisting here is what makes claim ids real,
  * which is what makes review, audit trail, and analytics possible at all.
  */
-import { supabaseRest, type Workspace } from "./_workspace.js";
+import { supabaseRest, type Identity } from "./_identity.js";
 import type { AssembledClaim } from "./_truthlens.js";
 
 interface PersistInput {
-  workspace: Workspace;
+  identity: Identity;
+  retentionDays: number;
   /** Set when this document is one item of a batch job. */
   jobId?: string | null;
   fileName: string;
@@ -22,7 +23,6 @@ interface PersistInput {
   timeline: Array<{ step: string; title: string; detail: string; status: string; timestamp: string }>;
   relations: Array<{ from: string; to: string; kind: string; strength: number }>;
   quality: { meanLegibility: number; blockCount: number; pageCount: number };
-  retentionDays: number;
 }
 
 export interface PersistedIds {
@@ -58,7 +58,7 @@ export async function persistVerification(input: PersistInput): Promise<Persiste
     corrected_claims: input.summary.correctedCount,
     unsupported_claims: input.summary.unsupportedCount,
     needs_review_claims: input.summary.needsReviewCount,
-    organization_id: input.workspace.id,
+    user_id: input.identity.userId,
     job_id: input.jobId ?? null,
     retention_until: retentionUntil,
     processing_status: "completed",
@@ -159,12 +159,17 @@ export async function persistVerification(input: PersistInput): Promise<Persiste
     .filter((row) => Boolean(row.from_claim_id) && Boolean(row.to_claim_id));
   if (relationRows.length > 0) await insert("claim_relations", relationRows, "return=minimal");
 
-  // Cheap denormalised counter so the dashboard does not COUNT(*) the documents table per load.
-  void supabaseRest(`rpc/increment_document_count`, {
-    method: "POST",
-    headers: { Prefer: "return=minimal" },
-    body: JSON.stringify({ workspace: input.workspace.id }),
-  }).catch(() => undefined);
-
   return { documentId: document.id, claimIds };
+}
+
+/** Per-user retention policy, used to stamp retention_until on every stored document. */
+export async function retentionDaysFor(identity: Identity): Promise<number> {
+  try {
+    const response = await supabaseRest(`user_settings?user_id=eq.${identity.userId}&select=retention_days&limit=1`);
+    if (!response.ok) return 30;
+    const rows = (await response.json()) as Array<{ retention_days?: number }>;
+    return rows[0]?.retention_days ?? 30;
+  } catch {
+    return 30;
+  }
 }

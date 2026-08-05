@@ -7,13 +7,15 @@ import ParticleBackground from "@/components/truthlens/ParticleBackground";
 import MouseGlow from "@/components/truthlens/MouseGlow";
 import { BarRows, StatTile, TrendChart, type TrendPoint } from "@/components/truthlens/charts";
 import { invokeAi } from "@/integrations/aiClient";
+import { useAuth } from "@/integrations/auth";
+import { SignInRequired } from "@/components/truthlens/AccountMenu";
 
 interface Analytics {
   available: boolean;
   hasData: boolean;
   reason?: string;
   windowDays?: number;
-  workspace?: { name: string; retentionDays: number };
+  account?: { name: string; email: string };
   totals?: { documents: number; claims: number; verified: number; corrected: number; unsupported: number; needsReview: number; reviewDecisions: number };
   rates?: {
     averageTrustScore: number;
@@ -42,6 +44,7 @@ export default function TruthLensDashboard() {
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user, loading: authLoading } = useAuth();
 
   const load = async () => {
     setLoading(true);
@@ -55,8 +58,10 @@ export default function TruthLensDashboard() {
   };
 
   useEffect(() => {
-    void load();
-  }, []);
+    // History belongs to an account; there is nothing to fetch for a guest.
+    if (user) void load();
+    else setLoading(false);
+  }, [user]);
 
   return (
     <div className="min-h-screen flex flex-col aurora-bg text-foreground">
@@ -72,24 +77,26 @@ export default function TruthLensDashboard() {
               </h1>
               <p className="text-sm text-muted-foreground mt-1">
                 {data?.hasData
-                  ? `Last ${data.windowDays} days · ${data.workspace?.name ?? "workspace"} · retained ${data.workspace?.retentionDays} days`
-                  : "Verification analytics for this workspace."}
+                  ? `Last ${data.windowDays} days · ${data.account?.name ?? "your account"}`
+                  : "Verification analytics for your account."}
               </p>
             </div>
-            <button onClick={load} disabled={loading} className="btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5 disabled:opacity-50">
+            {user && <button onClick={load} disabled={loading} className="btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5 disabled:opacity-50">
               {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Refresh
-            </button>
+            </button>}
           </div>
 
           {error && <GlassCard hover={false} className="p-5 mb-6 border-danger/40"><p className="text-xs text-danger">{error}</p></GlassCard>}
 
-          {loading && !data && (
+          {!authLoading && !user && <SignInRequired feature="The dashboard" />}
+
+          {user && loading && !data && (
             <GlassCard hover={false} className="p-12 text-center">
               <Loader2 className="w-8 h-8 text-primary mx-auto animate-spin" />
             </GlassCard>
           )}
 
-          {data && !data.available && (
+          {user && data && !data.available && (
             <GlassCard hover={false} className="p-10 text-center max-w-3xl mx-auto">
               <Database className="w-10 h-10 text-primary mx-auto mb-4" />
               <h2 className="text-lg font-bold">Analytics need a stored workspace</h2>
@@ -97,7 +104,7 @@ export default function TruthLensDashboard() {
             </GlassCard>
           )}
 
-          {data?.available && !data.hasData && (
+          {user && data?.available && !data.hasData && (
             <GlassCard hover={false} className="p-10 text-center max-w-3xl mx-auto">
               <BarChart3 className="w-10 h-10 text-primary mx-auto mb-4" />
               <h2 className="text-lg font-bold">No verifications in this workspace yet</h2>
@@ -111,7 +118,7 @@ export default function TruthLensDashboard() {
             </GlassCard>
           )}
 
-          {data?.hasData && data.totals && data.rates && (
+          {user && data?.hasData && data.totals && data.rates && (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <StatTile label="Documents verified" value={data.totals.documents} icon={<Database className="w-4 h-4" />} hint={`${data.totals.claims} claims checked`} />

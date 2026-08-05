@@ -7,7 +7,7 @@
  * a 429 (rate limited) and a 401 (sign-in required) all look like an outage.
  */
 
-import { workspaceToken } from "@/lib/workspace";
+import { currentAccessToken } from "@/integrations/auth";
 
 type FnName =
   | "generate-caption"
@@ -37,16 +37,16 @@ export class ApiError extends Error {
 }
 
 async function attempt<T>(base: string, name: FnName, body: unknown): Promise<{ data: T } | { error: ApiError } | null> {
-  // Minting on demand means a first-time visitor's very first verification is already scoped to
-  // a workspace, so human review works immediately — no sign-up step in the way.
-  const token = workspaceToken();
+  // The verified Supabase session, or null for a guest. The API treats null as demo mode: it
+  // still verifies documents, it simply stores nothing.
+  const token = await currentAccessToken();
   let res: Response;
   try {
     res = await fetch(`${base}/${name}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { "x-truthlens-workspace": token } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(body),
     });

@@ -4,16 +4,14 @@ import { runPipeline } from "./_pipeline.js";
 import { resolutionChain } from "./_providers/index.js";
 import type { DocumentPayload } from "./_providers/types.js";
 import {
+  demoModeReason,
   isUuid,
   logActivity,
-  persistenceConfigured,
-  resolveWorkspace,
+  resolveIdentity,
   statusOf,
-  unavailableReason,
-  workspaceToken,
-  type Workspace,
-} from "./_workspace.js";
-import { persistVerification } from "./_persistence.js";
+  type Identity,
+} from "./_identity.js";
+import { persistVerification, retentionDaysFor } from "./_persistence.js";
 import { callerKey, rateLimit } from "./_ratelimit.js";
 import { resolveMediaType, SUPPORTED_MIME } from "./_media.js";
 
@@ -67,16 +65,12 @@ export default async function handler(req: any, res: any) {
       return sendJson(res, 501, { error: "No AI provider is configured on this deployment. Set GEMINI_API_KEY or OPENROUTER_API_KEY." });
     }
 
-    /* ── Workspace: auto-provisioned on first use, no sign-in ── */
-    const token = workspaceToken(req);
-    let workspace: Workspace | null = null;
-    if (persistenceConfigured() && token) {
-      // A workspace that cannot be resolved must not fail the verification — the user still gets
-      // their result, and the response says plainly that it was not stored.
-      workspace = await resolveWorkspace(req).catch(() => null);
-    }
+    /* ── Identity: signed in → workspace mode, guest → demo mode ── */
+    // A failed identity lookup must never fail the verification. The user still gets their result;
+    // the response states plainly that it was not stored.
+    const identity: Identity | null = await resolveIdentity(req).catch(() => null);
 
-    const limit = rateLimit(callerKey(req, workspace?.id), RATE_LIMIT, RATE_WINDOW_MS);
+    const limit = rateLimit(callerKey(req, identity?.userId), RATE_LIMIT, RATE_WINDOW_MS);
     if (!limit.allowed) {
       res.setHeader("Retry-After", String(limit.retryAfterSeconds));
       return sendJson(res, 429, { error: `Rate limit exceeded. Retry in ${limit.retryAfterSeconds}s.` });
@@ -126,7 +120,21 @@ export default async function handler(req: any, res: any) {
          * precisely when a fallback is most wanted — failover was silently skipped and the user
          * saw the first provider's error instead.
          */
-        if (isLast || timeLeft < MIN_FAILOVER_MS) throw error;
+        if (isLast || timeLeft < MIN_FAILOVER_MS) {
+          /*
+           * Report every provider that was tried, not just the last one. Reporting only the final
+           * failure made a two-provider outage look like a single-provider problem: a user told
+           * "OpenRouter balance too low" had no way to know Gemini had already been tried and had
+           * failed for an entirely different reason.
+           */
+          if (attempts.length > 1) {
+            throw Object.assign(new Error(`All configured providers failed. ${attempts.join(" | ")}`), {
+              status: 422,
+              allProvidersFailed: true,
+            });
+          }
+          throw error;
+        }
         stages.record(
           "provider_failover",
           "Provider failover",
@@ -140,10 +148,10 @@ export default async function handler(req: any, res: any) {
     /* ── Stage 7: durable write ── */
     let documentId: string | null = null;
     let persistenceError: string | null = null;
-    if (workspace) {
+    if (identity) {
       try {
         const persisted = await persistVerification({
-          workspace,
+          identity,
           jobId: isUuid(jobId) ? jobId : null,
           fileName,
           documentType: result.documentType,
@@ -154,11 +162,11 @@ export default async function handler(req: any, res: any) {
           timeline: stages.events,
           relations: result.relations,
           quality: result.quality,
-          retentionDays: workspace.retentionDays,
+          retentionDays: await retentionDaysFor(identity),
         });
         documentId = persisted.documentId;
         for (const claim of result.claims) claim.id = persisted.claimIds[claim.id] ?? claim.id;
-        stages.record("persistence", "Durable write", `Stored document, claims, evidence, relations and audit entries; retained ${workspace.retentionDays} days.`, "success");
+        stages.record("persistence", "Durable write", `Stored under your account; claims, evidence, relations and audit entries written.`, "success");
       } catch (error) {
         // A failed database write can carry the connection URL or service-role key in its message,
         // and both the timeline and the persistence reason are returned to the browser.
@@ -167,7 +175,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    void logActivity(workspace?.id ?? null, {
+    void logActivity(identity, {
       route: "verify-document",
       action: `Verified ${result.claims.length} claim(s) in ${fileName}`,
       statusCode: 200,
@@ -189,13 +197,17 @@ export default async function handler(req: any, res: any) {
       claims: result.claims.map(({ supportingBlocks, ...claim }) => claim),
       relations: result.relations,
       documentQuality: result.quality,
+      // Which engine actually read the page, so the UI never implies determinism it did not get.
+      ocr: result.ocr,
+      // Cross-check = claims came from another AI. Self-check = TruthLens proposed them itself.
+      verificationMode: req.body?.selfExtracted === true ? "self-check" : "cross-check",
       timeline: stages.events,
       verificationTimeMs: stages.totalMs(),
       createdAt: new Date().toISOString(),
       persistence: {
         persisted: Boolean(documentId),
-        mode: persistenceConfigured() ? (workspace ? "workspace" : "unscoped") : "stateless",
-        reason: documentId ? null : persistenceError ?? unavailableReason(Boolean(token)),
+        mode: identity ? "workspace" : "demo",
+        reason: documentId ? null : (persistenceError ?? demoModeReason()),
       },
     });
   } catch (error) {

@@ -1,5 +1,5 @@
 import { activeModel, sendJson } from "./_gemini.js";
-import { persistenceConfigured, supabaseRest } from "./_workspace.js";
+import { persistenceConfigured, supabaseRest } from "./_identity.js";
 import { providerStatus } from "./_providers/index.js";
 
 export const maxDuration = 10;
@@ -31,7 +31,7 @@ export default async function handler(req: any, res: any) {
     const probeStartedAt = Date.now();
     try {
       // Cheapest possible round trip that still proves PostgREST and Postgres are both alive.
-      const response = await supabaseRest("organizations?select=id&limit=1");
+      const response = await supabaseRest("documents?select=id&limit=1");
       database = { configured: true, reachable: response.ok, latencyMs: Date.now() - probeStartedAt };
     } catch {
       database = { configured: true, reachable: false, latencyMs: Date.now() - probeStartedAt };
@@ -53,7 +53,7 @@ export default async function handler(req: any, res: any) {
       verification: { ok: modelConfigured, detail: modelConfigured ? "A vision provider adapter is configured." : "No provider adapter is configured; set GEMINI_API_KEY." },
       persistence: {
         ok: !database.configured || database.reachable,
-        mode: database.configured ? "workspace" : "stateless",
+        mode: database.configured ? "workspace" : "demo-only",
         latencyMs: database.latencyMs,
         detail: !database.configured
           ? "Stateless mode: results are not stored; review, analytics and audit are unavailable by design."

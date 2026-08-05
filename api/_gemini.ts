@@ -196,6 +196,16 @@ const INTERNAL_DETAIL =
  * detail, so they are safe to surface verbatim.
  */
 function actionableMessage(raw: string): string | null {
+  // Every provider was tried and every one failed. Naming both beats naming whichever happened
+  // to be last, which reads as a single-vendor problem.
+  if (/^All configured providers failed\./.test(raw)) {
+    const quota = /RESOURCE_EXHAUSTED|exceeded your current quota|free_tier_requests/i.test(raw);
+    const credits = /requires more credits|openrouter_credits|requires at least \$/i.test(raw);
+    if (quota && credits) {
+      return "Both AI providers are unavailable: the Gemini free-tier daily quota is exhausted and the OpenRouter balance is too low. Add credits at https://openrouter.ai/settings/credits, enable billing on the Gemini key, or wait for the daily reset (midnight US Pacific).";
+    }
+    return "Every configured AI provider failed for this request. Check Admin → Models to see which providers are configured, and their quota or balance.";
+  }
   if (/RESOURCE_EXHAUSTED|exceeded your current quota|free_tier_requests/i.test(raw)) {
     return "The AI provider's request quota is exhausted. Free-tier keys allow 20 requests per day and each verification uses two, so about 10 documents per day. Enable billing on the provider key, or wait for the daily reset (midnight US Pacific).";
   }

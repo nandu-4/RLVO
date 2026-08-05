@@ -2,7 +2,7 @@ import { clientSafeError, errorMessage, sendJson } from "./_gemini.js";
 import { parseUpstreamClaims } from "./_truthlens.js";
 import { resolutionChain } from "./_providers/index.js";
 import type { DocumentPayload } from "./_providers/types.js";
-import { logActivity, persistenceConfigured, resolveWorkspace, statusOf } from "./_workspace.js";
+import { logActivity, resolveIdentity, statusOf } from "./_identity.js";
 import { callerKey, rateLimit } from "./_ratelimit.js";
 import { resolveMediaType, SUPPORTED_MIME } from "./_media.js";
 
@@ -41,8 +41,8 @@ export default async function handler(req: any, res: any) {
       return sendJson(res, 501, { error: "No AI provider is configured on this deployment. Set GEMINI_API_KEY or OPENROUTER_API_KEY." });
     }
 
-    const workspace = persistenceConfigured() ? await resolveWorkspace(req).catch(() => null) : null;
-    const limit = rateLimit(callerKey(req, workspace?.id), 10, 60_000);
+    const identity = await resolveIdentity(req).catch(() => null);
+    const limit = rateLimit(callerKey(req, identity?.userId), 10, 60_000);
     if (!limit.allowed) {
       res.setHeader("Retry-After", String(limit.retryAfterSeconds));
       return sendJson(res, 429, { error: `Rate limit exceeded. Retry in ${limit.retryAfterSeconds}s.` });
@@ -77,7 +77,7 @@ export default async function handler(req: any, res: any) {
       return sendJson(res, 422, { error: "No business facts could be extracted from this document. Paste the claims manually instead." });
     }
 
-    void logActivity(workspace?.id ?? null, {
+    void logActivity(identity, {
       route: "extract-claims",
       action: `Extracted ${claims.length} candidate claim(s) from ${fileName}`,
       statusCode: 200,

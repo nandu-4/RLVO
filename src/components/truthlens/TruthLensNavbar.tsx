@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Shield, Menu, X, LayoutDashboard, Upload, Settings, Image, Film, Video, Scale, Layers, ClipboardList } from "lucide-react";
+import { Shield, Menu, X, LayoutDashboard, Upload, Settings, Image, Film, Video, Scale, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
+import AccountMenu from "./AccountMenu";
 
 const navItems = [
   { label: "Home", href: "/" },
   { label: "Verify", href: "/verify", icon: <Upload className="w-4 h-4" /> },
-  { label: "Batch", href: "/batch", icon: <Layers className="w-4 h-4" /> },
   { label: "Review", href: "/review", icon: <ClipboardList className="w-4 h-4" /> },
   { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
   { label: "Benchmark", href: "/benchmark", icon: <Scale className="w-4 h-4" /> },
@@ -76,13 +76,33 @@ export default function TruthLensNavbar() {
               </Link>
             );
           })}
+
+          {/* RLVO research tools — a separate project, kept visible and clearly grouped. */}
+          <span className="h-4 w-px bg-border mx-2" aria-hidden="true" />
+          {labItems.map((item) => {
+            const isActive = location.pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                to={item.href}
+                aria-current={isActive ? "page" : undefined}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5",
+                  isActive
+                    ? "text-accent bg-accent/15 border border-accent/30"
+                    : "text-muted-foreground hover:text-foreground hover:bg-surface-light",
+                )}
+              >
+                {item.icon}
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
-        {/* CTA */}
+        {/* Account + CTA */}
         <div className="hidden md:flex items-center gap-3">
-          <Link to="/verify" className="btn-primary text-sm py-2 px-5 inline-block relative z-10">
-            Verify Document →
-          </Link>
+          <AccountMenu />
         </div>
 
         {/* Mobile Toggle */}

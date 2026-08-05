@@ -26,8 +26,24 @@ import type {
 const API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
 const MAX_RETRIES = 4; // one extra slot so a 402 down-fit still leaves room to retry transport errors
-/** Below this a transcription cannot return anything useful, so shrinking further is pointless. */
-const MIN_USABLE_TOKENS = 800;
+/**
+ * Floor for the 402 down-fit. Measured: a real balance offered 788 tokens and the previous floor
+ * of 800 refused to retry over a 12-token margin, failing a request that would have worked.
+ * 400 tokens still holds a short verification verdict; below that the reply truncates.
+ */
+const MIN_USABLE_TOKENS = 400;
+
+/*
+ * Output budgets sized to what the prompts actually return, not to the model's ceiling.
+ *
+ * Requesting 8000 made OpenRouter reserve 8000 tokens' worth of balance up front, so a small
+ * account was refused for work that needs a fraction of it — measured replies are ~1200-1400
+ * tokens for transcription and well under 1000 for verification. A tight budget makes a modest
+ * balance go several times further, and truncation is caught by the tolerant JSON parser anyway.
+ */
+const TRANSCRIBE_MAX_TOKENS = 4000;
+const VERIFY_MAX_TOKENS = 2000;
+const EXTRACT_MAX_TOKENS = 1500;
 
 /** Vision-capable models known to work through OpenRouter for document work. */
 export const OPENROUTER_MODELS = [
@@ -208,7 +224,7 @@ export function createOpenRouterAdapter(model: string = DEFAULT_OPENROUTER_MODEL
 
     async transcribe(document, options = {}): Promise<TranscriptionResult> {
       const raw = await callOpenRouter(model, TRANSCRIBE_PROMPT, `Document name: ${document.fileName}`, document, {
-        ...options, maxTokens: 8000, temperature: 0,
+        ...options, maxTokens: TRANSCRIBE_MAX_TOKENS, temperature: 0,
       });
       const parsed = parseJson<Partial<TranscriptionResult> | RawTextBlock[]>(raw);
       // Same envelope tolerance as the Gemini adapter: models drift between object and bare array.
@@ -234,7 +250,7 @@ export function createOpenRouterAdapter(model: string = DEFAULT_OPENROUTER_MODEL
         VERIFY_PROMPT,
         `Document name: ${document.fileName}\n\nClaims and their retrieved candidate evidence:\n${JSON.stringify(payload, null, 1)}`,
         document,
-        { ...options, maxTokens: 8000, temperature: 0.05 },
+        { ...options, maxTokens: VERIFY_MAX_TOKENS, temperature: 0.05 },
       );
       const parsed = parseJson<{ claims?: ProviderClaimVerdict[] } | ProviderClaimVerdict[]>(raw);
       return Array.isArray(parsed) ? parsed : Array.isArray(parsed.claims) ? parsed.claims : [];
@@ -242,7 +258,7 @@ export function createOpenRouterAdapter(model: string = DEFAULT_OPENROUTER_MODEL
 
     async extractClaims(document, options = {}): Promise<ExtractedClaim[]> {
       const raw = await callOpenRouter(model, EXTRACT_PROMPT, `Document name: ${document.fileName}`, document, {
-        ...options, maxTokens: 4000, temperature: 0.1,
+        ...options, maxTokens: EXTRACT_MAX_TOKENS, temperature: 0.1,
       });
       const parsed = parseJson<{ claims?: ExtractedClaim[] } | ExtractedClaim[]>(raw);
       return Array.isArray(parsed) ? parsed : Array.isArray(parsed.claims) ? parsed.claims : [];

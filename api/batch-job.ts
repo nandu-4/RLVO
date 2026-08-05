@@ -1,16 +1,15 @@
 import { clientSafeError, errorMessage, sendJson } from "./_gemini.js";
 import {
+  demoModeReason,
+  type Identity,
   httpError,
   isUuid,
   logActivity,
-  persistenceConfigured,
-  resolveWorkspace,
+  resolveIdentity,
   restJson,
   statusOf,
   supabaseRest,
-  unavailableReason,
-  workspaceToken,
-} from "./_workspace.js";
+} from "./_identity.js";
 import { callerKey, rateLimit } from "./_ratelimit.js";
 
 export const maxDuration = 20;
@@ -37,11 +36,10 @@ export default async function handler(req: any, res: any) {
   if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
 
   try {
-    if (!persistenceConfigured()) return sendJson(res, 503, { error: unavailableReason(false) });
-    const workspace = await resolveWorkspace(req);
-    if (!workspace) return sendJson(res, 401, { error: unavailableReason(Boolean(workspaceToken(req))) });
+    const identity = await resolveIdentity(req);
+    if (!identity) return sendJson(res, 401, { error: demoModeReason() });
 
-    const limit = rateLimit(callerKey(req, workspace.id), 240, 60_000);
+    const limit = rateLimit(callerKey(req, identity.userId), 240, 60_000);
     if (!limit.allowed) {
       res.setHeader("Retry-After", String(limit.retryAfterSeconds));
       return sendJson(res, 429, { error: `Rate limit exceeded. Retry in ${limit.retryAfterSeconds}s.` });
@@ -49,17 +47,17 @@ export default async function handler(req: any, res: any) {
 
     const { action } = req.body || {};
 
-    if (action === "create") return createJob(req, res, workspace.id);
-    if (action === "item") return recordItem(req, res, workspace.id);
-    if (action === "status") return jobStatus(req, res, workspace.id);
-    if (action === "cancel") return cancelJob(req, res, workspace.id);
+    if (action === "create") return createJob(req, res, identity);
+    if (action === "item") return recordItem(req, res, identity);
+    if (action === "status") return jobStatus(req, res, identity);
+    if (action === "cancel") return cancelJob(req, res, identity);
     return sendJson(res, 400, { error: "action must be one of: create, item, status, cancel." });
   } catch (error) {
     return sendJson(res, statusOf(error, 500), { error: clientSafeError(error, "batch").message });
   }
 }
 
-async function createJob(req: any, res: any, workspaceId: string) {
+async function createJob(req: any, res: any, identity: Identity) {
   const { files, label } = req.body || {};
   if (!Array.isArray(files) || files.length === 0) {
     return sendJson(res, 400, { error: "files must be a non-empty array of file names." });
@@ -69,7 +67,7 @@ async function createJob(req: any, res: any, workspaceId: string) {
   }
 
   const [job] = await write<Array<JobRow>>("verification_jobs", [{
-    organization_id: workspaceId,
+    user_id: identity.userId,
     label: String(label || "Batch verification").slice(0, 120),
     status: "processing",
     total_documents: files.length,
@@ -85,17 +83,17 @@ async function createJob(req: any, res: any, workspaceId: string) {
     })),
   );
 
-  void logActivity(workspaceId, { route: "batch-job", action: `Created batch of ${files.length} document(s)`, statusCode: 201 });
+  void logActivity(identity, { route: "batch-job", action: `Created batch of ${files.length} document(s)`, statusCode: 201 });
   return sendJson(res, 201, { job: toJob(job), items: items.map(toItem) });
 }
 
-async function recordItem(req: any, res: any, workspaceId: string) {
+async function recordItem(req: any, res: any, identity: Identity) {
   const { jobId, itemId, status, documentId, trustScore, totalClaims, needsReviewClaims, errorDetail } = req.body || {};
   if (!isUuid(jobId) || !isUuid(itemId)) throw httpError(400, "jobId and itemId must be UUIDs.");
   if (!["processing", "completed", "failed"].includes(String(status))) {
     throw httpError(400, "status must be processing, completed, or failed.");
   }
-  await assertJobInWorkspace(jobId, workspaceId);
+  await assertJobOwned(jobId, identity.userId);
 
   const patch: Record<string, unknown> = { status };
   if (status !== "processing") patch.completed_at = new Date().toISOString();
@@ -115,24 +113,24 @@ async function recordItem(req: any, res: any, workspaceId: string) {
   return sendJson(res, 200, await recountJob(jobId));
 }
 
-async function jobStatus(req: any, res: any, workspaceId: string) {
+async function jobStatus(req: any, res: any, identity: Identity) {
   const { jobId } = req.body || {};
   if (!isUuid(jobId)) throw httpError(400, "jobId must be a UUID.");
-  await assertJobInWorkspace(jobId, workspaceId);
+  await assertJobOwned(jobId, identity.userId);
   return sendJson(res, 200, await recountJob(jobId));
 }
 
-async function cancelJob(req: any, res: any, workspaceId: string) {
+async function cancelJob(req: any, res: any, identity: Identity) {
   const { jobId } = req.body || {};
   if (!isUuid(jobId)) throw httpError(400, "jobId must be a UUID.");
-  await assertJobInWorkspace(jobId, workspaceId);
+  await assertJobOwned(jobId, identity.userId);
 
   await supabaseRest(`verification_jobs?id=eq.${jobId}`, {
     method: "PATCH",
     headers: { Prefer: "return=minimal" },
     body: JSON.stringify({ status: "cancelled", updated_at: new Date().toISOString() }),
   });
-  void logActivity(workspaceId, { route: "batch-job", action: "Cancelled batch job", statusCode: 200 });
+  void logActivity(identity, { route: "batch-job", action: "Cancelled batch job", statusCode: 200 });
   return sendJson(res, 200, await recountJob(jobId));
 }
 
@@ -162,10 +160,10 @@ interface ItemRow {
   position: number;
 }
 
-async function assertJobInWorkspace(jobId: string, workspaceId: string): Promise<void> {
-  const rows = await restJson<Array<{ organization_id: string }>>(`verification_jobs?id=eq.${jobId}&select=organization_id&limit=1`);
+async function assertJobOwned(jobId: string, userId: string): Promise<void> {
+  const rows = await restJson<Array<{ user_id: string }>>(`verification_jobs?id=eq.${jobId}&select=user_id&limit=1`);
   if (!rows[0]) throw httpError(404, "Job not found.");
-  if (rows[0].organization_id !== workspaceId) throw httpError(403, "Job belongs to another workspace.");
+  if (rows[0].user_id !== userId) throw httpError(403, "Job belongs to another account.");
 }
 
 /**

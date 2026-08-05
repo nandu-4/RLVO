@@ -133,7 +133,7 @@ export interface DocumentQuality {
 export interface PersistenceState {
   /** False when the result exists only in this browser session. */
   persisted: boolean;
-  mode: "tenant" | "anonymous" | "stateless";
+  mode: "workspace" | "demo";
   reason: string | null;
 }
 
@@ -178,6 +178,10 @@ export interface VerificationResult {
   modelUsed: string;
   /** Present when the preferred provider failed and another was used. */
   failover?: string[];
+  /** Which engine read the page: deterministic OCR, or the model fallback. */
+  ocr?: { engine: "paddleocr" | "model-transcription"; degradedReason?: string };
+  /** cross-check = claims came from another AI system. self-check = TruthLens proposed them. */
+  verificationMode?: "cross-check" | "self-check";
   summary: VerificationSummary;
   claims: Claim[];
   /** Relationships derived from where each claim's evidence sits, not from a document schema. */

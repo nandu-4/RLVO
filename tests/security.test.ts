@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { clientSafeError } from "../api/_gemini.js";
-import { httpError } from "../api/_workspace.js";
+import { httpError } from "../api/_identity.js";
 
 /**
  * Error responses are a real disclosure route: the API talks to a database and a model provider,
@@ -91,5 +91,34 @@ describe("actionable operational errors", () => {
       const out = clientSafeError(new Error(raw), "verification");
       expect(out.message).not.toMatch(/AIza|supabase\.co|\.ts:\d+|\/var\/task/);
     }
+  });
+});
+
+/**
+ * When every provider fails, naming only the last one reads as a single-vendor problem and sends
+ * the user to fix the wrong thing.
+ */
+describe("multi-provider failure", () => {
+  beforeEach(() => vi.spyOn(console, "error").mockImplementation(() => {}));
+  afterEach(() => vi.restoreAllMocks());
+
+  it("names both causes when quota and balance both fail", () => {
+    const out = clientSafeError(
+      new Error(
+        'All configured providers failed. gemini/gemini-flash-latest: Gemini API 429 RESOURCE_EXHAUSTED | openrouter/anthropic/claude-sonnet-4: OpenRouter API 402 requires more credits',
+      ),
+      "verification",
+    );
+    expect(out.message).toMatch(/both ai providers/i);
+    expect(out.message).toMatch(/quota is exhausted/i);
+    expect(out.message).toMatch(/balance is too low/i);
+  });
+
+  it("still leaks no infrastructure detail in the combined message", () => {
+    const out = clientSafeError(
+      new Error("All configured providers failed. gemini: key AIzaSyC7xxxxxxxxxx | openrouter: https://xyz.supabase.co"),
+      "verification",
+    );
+    expect(out.message).not.toMatch(/AIza|supabase\.co/);
   });
 });

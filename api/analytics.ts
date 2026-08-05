@@ -1,5 +1,5 @@
 import { clientSafeError, errorMessage, sendJson } from "./_gemini.js";
-import { persistenceConfigured, resolveWorkspace, restJson, statusOf, unavailableReason, workspaceToken } from "./_workspace.js";
+import { demoModeReason, resolveIdentity, restJson, statusOf } from "./_identity.js";
 
 export const maxDuration = 20;
 
@@ -42,32 +42,30 @@ export default async function handler(req: any, res: any) {
   if (req.method !== "GET" && req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
 
   try {
-    if (!persistenceConfigured()) {
-      return sendJson(res, 200, { available: false, reason: unavailableReason(false), hasData: false });
-    }
-    const workspace = await resolveWorkspace(req, { create: false });
-    if (!workspace) {
-      return sendJson(res, 200, { available: false, reason: unavailableReason(Boolean(workspaceToken(req))), hasData: false });
+    // The dashboard is a signed-in feature: history requires an account to belong to.
+    const identity = await resolveIdentity(req);
+    if (!identity) {
+      return sendJson(res, 200, { available: false, reason: demoModeReason(), hasData: false });
     }
 
     const since = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString();
     const [documents, claims, decisions] = await Promise.all([
       restJson<DocumentRow[]>(
-        `documents?organization_id=eq.${workspace.id}&created_at=gte.${since}` +
+        `documents?user_id=eq.${identity.userId}&created_at=gte.${since}` +
           `&select=id,document_type,trust_score,risk_level,total_claims,verified_claims,corrected_claims,unsupported_claims,needs_review_claims,model_used,mean_legibility,created_at` +
           `&order=created_at.desc&limit=${MAX_ROWS}`,
       ),
       restJson<ClaimRow[]>(
-        `claims?select=field_name,status,trust_score,signals_measured,hallucination_risk_level,retrieval_candidates,retrieval_cited,documents!inner(organization_id,created_at)` +
-          `&documents.organization_id=eq.${workspace.id}&documents.created_at=gte.${since}&limit=${MAX_ROWS * 5}`,
+        `claims?select=field_name,status,trust_score,signals_measured,hallucination_risk_level,retrieval_candidates,retrieval_cited,documents!inner(user_id,created_at)` +
+          `&documents.user_id=eq.${identity.userId}&documents.created_at=gte.${since}&limit=${MAX_ROWS * 5}`,
       ),
       restJson<Array<{ decision: string; created_at: string }>>(
-        `review_decisions?select=decision,created_at,documents!inner(organization_id)&documents.organization_id=eq.${workspace.id}&limit=${MAX_ROWS}`,
+        `review_decisions?select=decision,created_at,documents!inner(user_id)&documents.user_id=eq.${identity.userId}&limit=${MAX_ROWS}`,
       ),
     ]);
 
     if (documents.length === 0) {
-      return sendJson(res, 200, { available: true, hasData: false, workspace: { name: workspace.name, retentionDays: workspace.retentionDays } });
+      return sendJson(res, 200, { available: true, hasData: false, account: { name: identity.name, email: identity.email } });
     }
 
     const totalClaims = claims.length || documents.reduce((sum, doc) => sum + doc.total_claims, 0);
@@ -81,7 +79,7 @@ export default async function handler(req: any, res: any) {
       available: true,
       hasData: true,
       windowDays: WINDOW_DAYS,
-      workspace: { name: workspace.name, retentionDays: workspace.retentionDays },
+      account: { name: identity.name, email: identity.email },
       totals: {
         documents: documents.length,
         claims: totalClaims,

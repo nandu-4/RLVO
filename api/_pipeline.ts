@@ -15,10 +15,17 @@ import { buildDocumentIndex, type DocumentIndex } from "./_documentIndex.js";
 import { retrieveEvidence, type RetrievalReport } from "./_retrieval.js";
 import { buildClaimGraph, type ClaimRelation } from "./_signals.js";
 import type { ClaimToVerify, DocumentPayload, ProviderClaimVerdict, VisionProviderAdapter } from "./_providers/types.js";
+import { ocrConfigured, runPaddleOcr, type OcrEngineId } from "./_ocr.js";
 
 export interface PipelineTimings {
   transcribeMs: number;
   verifyMs: number;
+}
+
+export interface OcrProvenance {
+  engine: OcrEngineId;
+  /** Set when PaddleOCR was configured but unusable and model transcription ran instead. */
+  degradedReason?: string;
 }
 
 export interface PipelineResult {
@@ -26,6 +33,7 @@ export interface PipelineResult {
   quality: DocumentIndex["quality"];
   claims: AssembledClaim[];
   relations: ClaimRelation[];
+  ocr: OcrProvenance;
   summary: {
     totalClaims: number;
     verifiedCount: number;
@@ -56,21 +64,46 @@ export async function runPipeline(
   const stages = options.recorder ?? createStageRecorder();
   const timings: PipelineTimings = { transcribeMs: 0, verifyMs: 0 };
 
-  /* ── Document understanding — never sees a claim ── */
+  /* ── Text extraction — deterministic OCR first, model transcription only as a fallback ── */
   let index = options.reuseIndex;
+  let ocr: OcrProvenance = { engine: "paddleocr" };
+
   if (!index) {
     const startedAt = Date.now();
-    const transcription = await provider.transcribe(document, { timeoutMs: options.transcribeTimeoutMs });
+    let transcription;
+
+    if (ocrConfigured()) {
+      try {
+        const outcome = await runPaddleOcr(document);
+        transcription = outcome;
+        ocr = { engine: outcome.engine };
+      } catch (error) {
+        // Degrade rather than fail: the user still gets a verification, and the response records
+        // that a non-deterministic engine produced the text.
+        const reason = error instanceof Error ? error.message : "OCR service unreachable";
+        transcription = await provider.transcribe(document, { timeoutMs: options.transcribeTimeoutMs });
+        ocr = { engine: "model-transcription", degradedReason: reason };
+      }
+    } else {
+      transcription = await provider.transcribe(document, { timeoutMs: options.transcribeTimeoutMs });
+      ocr = { engine: "model-transcription", degradedReason: "OCR_SERVICE_URL is not configured on this deployment." };
+    }
+
     timings.transcribeMs = Date.now() - startedAt;
     index = buildDocumentIndex(transcription);
     if (index.blocks.length === 0) {
-      throw new Error("No readable text was transcribed from this document, so no claim can be verified against it.");
+      throw new Error("No readable text could be extracted from this document, so no claim can be verified against it.");
     }
     stages.record(
-      "document_understanding",
-      "Document understanding",
-      `Transcribed ${index.blocks.length} text block(s) across ${index.quality.pageCount} page(s) at ${index.quality.meanLegibility}% mean legibility. This pass never sees the claims.`,
+      "text_extraction",
+      ocr.engine === "paddleocr" ? "Text extraction (PaddleOCR)" : "Text extraction (model fallback)",
+      `Extracted ${index.blocks.length} text block(s) across ${index.quality.pageCount} page(s) at ${index.quality.meanLegibility}% mean confidence.` +
+        (ocr.degradedReason ? ` Deterministic OCR was unavailable — ${ocr.degradedReason}` : " Deterministic: the same page always yields the same text and coordinates.") +
+        " This pass never sees the claims.",
+      ocr.degradedReason ? "warning" : "info",
     );
+  } else {
+    ocr = { engine: "model-transcription", degradedReason: "Reused an index built by an earlier run." };
   }
 
   /* ── Evidence retrieval — independent search, no model involved ── */
@@ -155,6 +188,7 @@ export async function runPipeline(
       trustScore,
       riskLevel: trustScore >= 85 && needsReviewCount === 0 ? "LOW" : trustScore >= 60 ? "MEDIUM" : "HIGH RISK",
     },
+    ocr,
     stages: stages.events,
     timings,
   };
