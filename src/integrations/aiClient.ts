@@ -21,7 +21,8 @@ type FnName =
   | "benchmark"
   | "workspace"
   | "extract-claims"
-  | "review-queue";
+  | "review-queue"
+  | "history";
 
 const backend = (import.meta.env.VITE_BACKEND ?? "api").toLowerCase();
 const pythonBase = import.meta.env.VITE_PYTHON_API ?? "http://localhost:8000";
@@ -36,6 +37,27 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Stable per-browser id, used only when the deployment has no Supabase project and results are
+ * stored locally instead. It separates one browser's saved sessions from another's; it is not a
+ * credential and grants nothing beyond that scope. When Supabase IS configured the server ignores
+ * this header entirely and scopes storage to the verified session instead.
+ */
+const DEVICE_KEY = "truthlens.deviceId";
+export function deviceId(): string {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id || !/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
+      id = (crypto.randomUUID?.() ?? `d${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/-/g, "");
+      localStorage.setItem(DEVICE_KEY, id);
+    }
+    return id;
+  } catch {
+    // Private browsing can throw on localStorage access; a shared bucket is better than no history.
+    return "shared-local";
+  }
+}
+
 async function attempt<T>(base: string, name: FnName, body: unknown): Promise<{ data: T } | { error: ApiError } | null> {
   // The verified Supabase session, or null for a guest. The API treats null as demo mode: it
   // still verifies documents, it simply stores nothing.
@@ -46,6 +68,7 @@ async function attempt<T>(base: string, name: FnName, body: unknown): Promise<{ 
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-TruthLens-Device": deviceId(),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(body),

@@ -77,9 +77,7 @@ export default async function handler(req: any, res: any) {
       document_id: documentId,
       claim_id: claimId,
       decision: decision.status,
-      reviewer_name: reviewerName,
       reviewer_user_id: identity.userId,
-      reviewer_email: identity.email,
       reviewer_notes: decision.reviewerNotes?.trim().slice(0, 2000) || null,
       override_value: decision.overrideValue?.trim().slice(0, 1000) || null,
     });
@@ -99,9 +97,7 @@ export default async function handler(req: any, res: any) {
         final_value: finalValue,
         status: finalStatus,
         trust_score: claim.trust_score,
-        reviewer_name: reviewerName,
         reviewer_user_id: identity.userId,
-        reviewer_email: identity.email,
         reviewer_notes: decision.reviewerNotes?.trim().slice(0, 2000) || null,
       },
       "return=minimal",
@@ -120,9 +116,7 @@ export default async function handler(req: any, res: any) {
       headers: { Prefer: "return=minimal" },
       body: JSON.stringify({
         status: "resolved",
-        assigned_name: reviewerName,
         assigned_user_id: identity.userId,
-        assigned_email: identity.email,
         resolved_at: new Date().toISOString(),
       }),
     });

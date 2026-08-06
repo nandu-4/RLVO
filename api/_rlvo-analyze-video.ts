@@ -1,4 +1,4 @@
-import { callGemini, imagePart, sendJson, errorMessage } from "./_gemini";
+import { callGemini, imagePart, sendJson, errorMessage } from "./_gemini.js";
 
 export const maxDuration = 60;
 

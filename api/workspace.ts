@@ -140,10 +140,10 @@ async function updateSettings(req: any, res: any, identity: Identity) {
 async function activity(res: any, identity: Identity) {
   const [log, decisions] = await Promise.all([
     restJson<Array<{ id: string; route: string; action: string; status_code: number; duration_ms: number | null; created_at: string }>>(
-      `api_activity?user_id=eq.${identity.userId}&select=id,route,action,status_code,duration_ms,created_at&order=created_at.desc&limit=100`,
+      `activity_logs?user_id=eq.${identity.userId}&select=id,route,action,status_code,duration_ms,created_at&order=created_at.desc&limit=100`,
     ),
-    restJson<Array<{ id: string; decision: string; reviewer_name: string; reviewer_email: string | null; reviewer_notes: string | null; created_at: string }>>(
-      `review_decisions?select=id,decision,reviewer_name,reviewer_email,reviewer_notes,created_at,documents!inner(user_id,document_name)&documents.user_id=eq.${identity.userId}&order=created_at.desc&limit=100`,
+    restJson<Array<{ id: string; decision: string; reviewer_user_id: string | null; reviewer_notes: string | null; created_at: string }>>(
+      `review_decisions?select=id,decision,reviewer_user_id,reviewer_notes,created_at,documents!inner(user_id,document_name)&documents.user_id=eq.${identity.userId}&order=created_at.desc&limit=100`,
     ),
   ]);
 
@@ -159,8 +159,8 @@ async function activity(res: any, identity: Identity) {
     reviewDecisions: decisions.map((entry: any) => ({
       id: entry.id,
       decision: entry.decision,
-      reviewerName: entry.reviewer_name,
-      reviewerEmail: entry.reviewer_email,
+      reviewerName: entry.reviewer_user_id === identity.userId ? identity.name : "Reviewer",
+      reviewerEmail: entry.reviewer_user_id === identity.userId ? identity.email : null,
       reviewerNotes: entry.reviewer_notes,
       documentName: entry.documents?.document_name ?? "Unknown document",
       createdAt: entry.created_at,
@@ -185,7 +185,6 @@ async function purge(res: any, identity: Identity) {
 async function erase(res: any, identity: Identity) {
   const response = await supabaseRest(`documents?user_id=eq.${identity.userId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
   if (!response.ok) throw new Error(`Erase failed: ${(await response.text()).slice(0, 200)}`);
-  await supabaseRest(`verification_jobs?user_id=eq.${identity.userId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }).catch(() => undefined);
   await supabaseRest(`model_benchmarks?user_id=eq.${identity.userId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }).catch(() => undefined);
   return sendJson(res, 200, { erased: true });
 }

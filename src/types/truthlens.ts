@@ -178,6 +178,10 @@ export interface VerificationResult {
   modelUsed: string;
   /** Present when the preferred provider failed and another was used. */
   failover?: string[];
+  fallbackUsed?: boolean;
+  fallbackReason?: string;
+  attempts?: string[];
+  replayMode?: boolean;
   /** Which engine read the page: deterministic OCR, or the model fallback. */
   ocr?: { engine: "paddleocr" | "model-transcription"; degradedReason?: string };
   /** cross-check = claims came from another AI system. self-check = TruthLens proposed them. */

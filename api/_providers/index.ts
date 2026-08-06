@@ -1,6 +1,7 @@
 import { activeModel as geminiDefaultModel } from "../_gemini.js";
 import { createGeminiAdapter } from "./gemini.js";
 import { createOpenRouterAdapter, DEFAULT_OPENROUTER_MODEL, OPENROUTER_MODELS } from "./openrouter.js";
+import { createHuggingFaceAdapter, DEFAULT_HUGGINGFACE_MODEL } from "./huggingface.js";
 import type { VisionProviderAdapter } from "./types.js";
 
 /**
@@ -11,7 +12,7 @@ import type { VisionProviderAdapter } from "./types.js";
  * pipeline, retrieval engine, scoring, persistence and UI are untouched.
  */
 
-export type ProviderId = "gemini" | "openrouter";
+export type ProviderId = "gemini" | "openrouter" | "huggingface";
 
 interface ProviderDefinition {
   id: ProviderId;
@@ -47,6 +48,7 @@ const DEFINITIONS: ProviderDefinition[] = [
     create: (model) => createOpenRouterAdapter(model),
     isConfigured: () => Boolean(process.env.OPENROUTER_API_KEY),
   },
+  { id: "huggingface", label: "Hugging Face", vendor: "Hugging Face", keyVar: "HUGGINGFACE_API_KEY", models: [DEFAULT_HUGGINGFACE_MODEL], defaultModel: DEFAULT_HUGGINGFACE_MODEL, create: (model) => createHuggingFaceAdapter(model), isConfigured: () => Boolean(process.env.HUGGINGFACE_API_KEY) },
 ];
 
 const byId = (id: string) => DEFINITIONS.find((d) => d.id === id);
@@ -84,16 +86,43 @@ export function resolveProvider(providerId?: string, model?: string): ResolvedPr
 }
 
 /**
- * Resolution order for automatic failover: the requested provider first, then every other
- * configured provider. A vendor outage or an exhausted quota then degrades to a different
- * vendor instead of failing the request outright.
+ * Resolution order for automatic failover.
+ *
+ * The chain walks MODELS, not just providers. That distinction is the whole point:
+ *
+ * MEASURED against a live free-tier key — Gemini's daily allowance is billed per model, with
+ * quotaId `GenerateRequestsPerDayPerProjectPerModel-FreeTier`. With `gemini-flash-latest`
+ * exhausted (429), `gemini-flash-lite-latest` answered normally on the same key at the same
+ * moment. A chain of one-model-per-provider abandoned Gemini on that first 429 and fell through
+ * to vendors that were genuinely out of credit, so the whole request failed while a working
+ * model sat unused. Sibling models are tried before giving up on a vendor.
+ *
+ * Order within a provider is default-model first, then its siblings; providers keep registry
+ * order, with any explicitly requested provider promoted to the front. Exhausted-quota and
+ * insufficient-credit responses come back in well under a second, so the extra candidates cost
+ * negligible wall-clock — and the caller's own time guard drops the tail if the budget runs low.
  */
 export function resolutionChain(providerId?: string, model?: string): ResolvedProvider[] {
-  const preferred = resolveProvider(providerId, model);
-  const rest = DEFINITIONS.filter((d) => d.isConfigured() && d.id !== preferred?.providerId).map(
-    (d) => resolveProvider(d.id) as ResolvedProvider,
-  );
-  return [preferred, ...rest].filter(Boolean) as ResolvedProvider[];
+  const requested = providerId ? byId(providerId) : undefined;
+  const ordered = requested ? [requested, ...DEFINITIONS.filter((d) => d.id !== requested.id)] : DEFINITIONS;
+
+  const chain: ResolvedProvider[] = [];
+  const seen = new Set<string>();
+
+  for (const definition of ordered) {
+    if (!definition.isConfigured()) continue;
+    // An explicitly requested model leads, but only for the provider it belongs to.
+    const preferred = definition === requested && model && definition.models.includes(model) ? [model] : [];
+    for (const candidate of [...preferred, definition.defaultModel, ...definition.models]) {
+      const resolved = resolveProvider(definition.id, candidate);
+      if (!resolved) continue;
+      const key = `${resolved.providerId}:${resolved.model}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      chain.push(resolved);
+    }
+  }
+  return chain;
 }
 
 /** Registry view for the admin surface and the provider picker. */

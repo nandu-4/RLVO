@@ -109,9 +109,9 @@ describe("multi-provider failure", () => {
       ),
       "verification",
     );
-    expect(out.message).toMatch(/both ai providers/i);
-    expect(out.message).toMatch(/quota is exhausted/i);
-    expect(out.message).toMatch(/balance is too low/i);
+    expect(out.message).toMatch(/every ai provider is unavailable/i);
+    expect(out.message).toMatch(/gemini.{0,30}quota is exhausted/i);
+    expect(out.message).toMatch(/openrouter.{0,30}out of credit/i);
   });
 
   it("still leaks no infrastructure detail in the combined message", () => {
@@ -120,5 +120,42 @@ describe("multi-provider failure", () => {
       "verification",
     );
     expect(out.message).not.toMatch(/AIza|supabase\.co/);
+  });
+});
+
+describe("per-provider cause attribution", () => {
+  beforeEach(() => vi.spyOn(console, "error").mockImplementation(() => {}));
+  afterEach(() => vi.restoreAllMocks());
+
+  it("reports a depleted Hugging Face balance as billing, not a bad model id", () => {
+    const out = clientSafeError(
+      new Error(
+        'All configured providers failed. gemini/gemini-flash-latest: Gemini API 429 RESOURCE_EXHAUSTED | huggingface/Qwen/Qwen2.5-VL-72B-Instruct: Hugging Face API 402: {"error":"You have depleted your monthly included credits."}',
+      ),
+      "verification",
+    );
+    expect(out.message).toMatch(/hugging face.{0,40}out of credit/i);
+    expect(out.message).not.toMatch(/model id/i);
+  });
+
+  it("reports an unservable Hugging Face model id as a model problem", () => {
+    const out = clientSafeError(
+      new Error(
+        'All configured providers failed. gemini/gemini-flash-latest: Gemini API 429 RESOURCE_EXHAUSTED | huggingface/Qwen/Qwen2.5-VL-7B-Instruct: Hugging Face API 400: model_not_supported',
+      ),
+      "verification",
+    );
+    expect(out.message).toMatch(/model id is not available/i);
+    expect(out.message).toMatch(/HUGGINGFACE_MODEL/);
+  });
+
+  it("explains OpenRouter's free-account prompt cap", () => {
+    const out = clientSafeError(
+      new Error("OpenRouter API 402: Prompt tokens limit exceeded: 1611 > 1541"),
+      "verification",
+    );
+    expect(out.message).toMatch(/prompt/i);
+    expect(out.message).toMatch(/credits/i);
+    expect(out.message).not.toMatch(/Reference/);
   });
 });

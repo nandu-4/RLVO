@@ -31,6 +31,8 @@ export interface OcrProvenance {
 export interface PipelineResult {
   documentType: string;
   quality: DocumentIndex["quality"];
+  /** Every OCR block the verification was derived from, cited or not. Needed to replay the overlay. */
+  textBlocks: DocumentIndex["blocks"];
   claims: AssembledClaim[];
   relations: ClaimRelation[];
   ocr: OcrProvenance;
@@ -175,6 +177,13 @@ export async function runPipeline(
   return {
     documentType: index.documentType,
     quality: index.quality,
+    /*
+     * The OCR blocks the whole verification was derived from. Returned so a stored session can
+     * reconstruct the page — evidence overlays reference these coordinates, and a snapshot that
+     * kept only the cited evidence could not redraw the retrieved-but-unused regions that explain
+     * why a claim scored the way it did.
+     */
+    textBlocks: index.blocks,
     claims: assembled,
     relations: buildClaimGraph(
       assembled.map((claim) => ({ id: claim.id, field: claim.field, value: claim.originalValue, blocks: claim.supportingBlocks })),

@@ -82,7 +82,7 @@ export async function resolveIdentity(req: any): Promise<Identity | null> {
   if (!user?.id) return null;
 
   const meta = user.user_metadata ?? {};
-  return {
+  const identity = {
     userId: user.id,
     email: user.email ?? "",
     name:
@@ -92,6 +92,14 @@ export async function resolveIdentity(req: any): Promise<Identity | null> {
       "Reviewer",
     avatarUrl: (meta.avatar_url as string) ?? (meta.picture as string) ?? null,
   };
+  // Mirror the verified Auth profile for relational audit/review displays. This is best-effort;
+  // identity verification must not fail just because a profile write is temporarily unavailable.
+  await supabaseRest("profiles?on_conflict=id", {
+    method: "POST",
+    headers: { Prefer: "return=minimal,resolution=merge-duplicates" },
+    body: JSON.stringify([{ id: identity.userId, display_name: identity.name, avatar_url: identity.avatarUrl, updated_at: new Date().toISOString() }]),
+  }).catch(() => undefined);
+  return identity;
 }
 
 /** Confirm a document belongs to the caller before any service-role write touches it. */
@@ -111,7 +119,7 @@ export async function logActivity(
 ): Promise<void> {
   if (!identity || !persistenceConfigured()) return;
   try {
-    await supabaseRest("api_activity", {
+    await supabaseRest("activity_logs", {
       method: "POST",
       headers: { Prefer: "return=minimal" },
       body: JSON.stringify({

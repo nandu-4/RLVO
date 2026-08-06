@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Shield, Menu, X, LayoutDashboard, Upload, Settings, Image, Film, Video, Scale, ClipboardList } from "lucide-react";
+import { Shield, Menu, X, LayoutDashboard, Upload, Settings, Image, Film, Video, Scale, ClipboardList, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import AccountMenu from "./AccountMenu";
 
@@ -10,6 +10,7 @@ const navItems = [
   { label: "Verify", href: "/verify", icon: <Upload className="w-4 h-4" /> },
   { label: "Review", href: "/review", icon: <ClipboardList className="w-4 h-4" /> },
   { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
+  { label: "History", href: "/history", icon: <History className="w-4 h-4" /> },
   { label: "Benchmark", href: "/benchmark", icon: <Scale className="w-4 h-4" /> },
   { label: "Admin", href: "/admin", icon: <Settings className="w-4 h-4" /> },
 ];

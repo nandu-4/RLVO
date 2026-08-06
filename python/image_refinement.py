@@ -408,56 +408,48 @@ def verify_document(image_data_url: str) -> dict:
     try:
         cleaned = re.sub(r"```json|```", "", raw).strip()
         data = json.loads(cleaned)
-        data["id"] = f"vr-{uuid.uuid4().hex[:8]}"
-        data["createdAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ")
-        return data
     except Exception as err:
+        # NEVER fabricate a result here.
+        #
+        # This branch used to return an invented claim ("Verified Payload Stream") with a made-up
+        # bounding box and a trustScore of 95. That is indistinguishable from a real verification
+        # to anyone reading the response, so a parse failure silently became fake evidence
+        # presented as fact — the exact failure mode this product exists to catch.
+        #
+        # A verification that could not be completed is reported as such. The raw model output is
+        # kept for debugging but is never promoted into claims or evidence.
         print(f"[verify_document parse error] {err}", flush=True)
         return {
             "id": f"vr-{uuid.uuid4().hex[:8]}",
-            "documentId": f"doc-{uuid.uuid4().hex[:8]}",
-            "documentType": "Enterprise Document",
-            "fileName": "uploaded_document.pdf",
-            "fileSizeKb": 120,
-            "modelUsed": "Gemini 2.5 Flash",
+            "status": "verification_failed",
+            "error": (
+                "Verification could not be completed: the model returned output that is not valid "
+                "JSON, so no claim could be extracted. No results are shown because none were "
+                "produced — retry, or use a different model."
+            ),
+            "documentType": None,
             "summary": {
-                "totalClaims": 1,
-                "verifiedCount": 1,
+                "totalClaims": 0,
+                "verifiedCount": 0,
                 "correctedCount": 0,
                 "unsupportedCount": 0,
                 "needsReviewCount": 0,
-                "trustScore": 95,
-                "riskLevel": "LOW"
+                "trustScore": None,
+                "riskLevel": "UNKNOWN",
             },
-            "claims": [
-                {
-                    "id": "c-1",
-                    "field": "Document Content Verification",
-                    "category": "Header",
-                    "originalValue": "Payload verified",
-                    "verifiedValue": "Payload verified",
-                    "status": "verified",
-                    "trustScore": 95,
-                    "reason": "Visual OCR grounding confirmed binary payload structure.",
-                    "confidenceBreakdown": {"ocrAgreement": 95, "visionAgreement": 95, "layoutAgreement": 95, "semanticAgreement": 95, "finalTrustScore": 95},
-                    "evidence": [
-                        {
-                            "id": "e-1",
-                            "type": "ocr",
-                            "source": "Document Header",
-                            "text": "Verified Payload Stream",
-                            "pageNumber": 1,
-                            "boundingBox": {"x": 10, "y": 10, "width": 80, "height": 10},
-                            "confidence": 95,
-                            "timestamp": time.strftime("%H:%M:%S")
-                        }
-                    ]
-                }
-            ],
+            "claims": [],
+            "evidence": [],
             "timeline": [],
-            "verificationTimeMs": 1500,
+            "modelUsed": MODEL,
+            # Debugging aid only. Truncated, and never parsed into anything user-facing.
+            "debug": {"parseError": str(err), "rawOutputPreview": raw[:500]},
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
+
+    data["id"] = f"vr-{uuid.uuid4().hex[:8]}"
+    data["status"] = "completed"
+    data["createdAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return data
 
 
 # ---------------------------------------------------------------------------

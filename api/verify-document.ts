@@ -14,6 +14,15 @@ import {
 import { persistVerification, retentionDaysFor } from "./_persistence.js";
 import { callerKey, rateLimit } from "./_ratelimit.js";
 import { resolveMediaType, SUPPORTED_MIME } from "./_media.js";
+import {
+  contentHash,
+  findRepeat,
+  resolveSession,
+  saveVerification,
+  storageDriver,
+  storageUnavailableReason,
+  type StorageSession,
+} from "./_store.js";
 
 /**
  * Vision + reasoning over a full document is the heaviest call in the product, and it makes two
@@ -93,6 +102,51 @@ export default async function handler(req: any, res: any) {
       media.corrected ? "warning" : "info",
     );
 
+    /*
+     * ── Repeat verification: answer from store, spend nothing ──
+     *
+     * Re-uploading a document that has already been verified with the same claims is the single
+     * most common way to burn a free-tier allowance, and it produces an answer that is by
+     * definition already known. The hash covers the document bytes, the claims and the mode, so a
+     * hit is the same question — not a similar one. An explicit provider or model request skips
+     * the cache (see findRepeat), and `force: true` bypasses it outright for a deliberate re-run.
+     */
+    // Cross-check = claims came from another AI. Self-check = TruthLens proposed them itself.
+    // Part of the content address: the same claims mean something different in each mode.
+    const verificationMode = req.body?.selfExtracted === true ? "self-check" : "cross-check";
+    const session: StorageSession | null = await resolveSession(req).catch(() => null);
+    const requestHash = contentHash(document.data, claims, verificationMode);
+
+    if (session && req.body?.force !== true) {
+      try {
+        const cached = await findRepeat(session, requestHash, requestedProvider, requestedModel);
+        if (cached) {
+          stages.record(
+            "cache_hit",
+            "Repeat verification",
+            "This exact document and claim set was verified before. The stored result was returned without calling any AI provider.",
+            "success",
+          );
+          void logActivity(identity, { route: "verify-document", action: `Replayed a stored verification of ${fileName}`, statusCode: 200, durationMs: stages.totalMs() });
+          return sendJson(res, 200, {
+            ...cached,
+            servedFromCache: true,
+            // The payload below describes THIS request; every other field is the original run's,
+            // unchanged, so the two are never conflated.
+            cache: {
+              originalVerifiedAt: (cached as { createdAt?: string }).createdAt ?? null,
+              servedAt: new Date().toISOString(),
+              aiCallsUsed: 0,
+              detail: "Returned from stored results. Send force:true to re-run the model.",
+            },
+            timeline: [...((cached as { timeline?: unknown[] }).timeline ?? []), ...stages.events],
+          });
+        }
+      } catch {
+        /* A cache miss must never block a real verification. */
+      }
+    }
+
     /* ── Stages 2-6: the shared pipeline, with automatic provider failover ── */
     let result: Awaited<ReturnType<typeof runPipeline>> | null = null;
     let used = chain[0];
@@ -156,7 +210,11 @@ export default async function handler(req: any, res: any) {
           fileName,
           documentType: result.documentType,
           fileSizeKb: Math.round((document.data.length * 0.75) / 1024),
-          modelUsed: `${used.providerId}/${used.model}`,
+          provider: used.providerId,
+          model: used.model,
+          verificationMode: req.body?.selfExtracted === true ? "self_check" : "cross_check",
+          ocrEngine: result.ocr?.engine,
+          documentProcessingTimeMs: stages.totalMs(),
           claims: result.claims,
           summary: result.summary,
           timeline: stages.events,
@@ -182,7 +240,7 @@ export default async function handler(req: any, res: any) {
       durationMs: stages.totalMs(),
     });
 
-    return sendJson(res, 200, {
+    const response = {
       id: crypto.randomUUID(),
       documentId,
       documentType: result.documentType,
@@ -193,23 +251,70 @@ export default async function handler(req: any, res: any) {
       providerLabel: used.providerLabel,
       modelUsed: used.model,
       failover: attempts.length > 0 ? attempts : undefined,
+      fallbackUsed: attempts.length > 0,
+      fallbackReason: attempts[0]?.split(": ")[1],
+      attempts: [...attempts, `${used.providerId}/${used.model}: success`],
       summary: result.summary,
       claims: result.claims.map(({ supportingBlocks, ...claim }) => claim),
       relations: result.relations,
       documentQuality: result.quality,
       // Which engine actually read the page, so the UI never implies determinism it did not get.
       ocr: result.ocr,
-      // Cross-check = claims came from another AI. Self-check = TruthLens proposed them itself.
-      verificationMode: req.body?.selfExtracted === true ? "self-check" : "cross-check",
+      /*
+       * The OCR blocks every verdict was derived from, including regions retrieval considered and
+       * did not cite. Without them a replayed session could redraw only the winning evidence, and
+       * the overlay that explains *why* a claim scored as it did would be missing.
+       */
+      textBlocks: result.textBlocks,
+      verificationMode,
+      // Content address of document + claims + mode. Lets an identical later request be answered
+      // from storage instead of the model.
+      contentHash: requestHash,
       timeline: stages.events,
       verificationTimeMs: stages.totalMs(),
       createdAt: new Date().toISOString(),
       persistence: {
-        persisted: Boolean(documentId),
-        mode: identity ? "workspace" : "demo",
-        reason: documentId ? null : (persistenceError ?? demoModeReason()),
+        persisted: false,
+        mode: session?.driver === "supabase" ? "workspace" : session?.driver === "local" ? "local" : "demo",
+        reason: null as string | null,
       },
-    });
+    };
+
+    /*
+     * Store the COMPLETE response, not a normalised subset.
+     *
+     * `response` is the entire envelope the browser receives — document metadata, OCR blocks,
+     * retrieved evidence with page coordinates, per-claim reasoning and trust breakdowns, the
+     * relation graph, risk prediction, measured stage timings, provider, model, failover attempts
+     * and timestamp. Replay hands this object straight back, so a replayed session is identical
+     * to the original rather than a reconstruction of it.
+     */
+    if (session) {
+      try {
+        await saveVerification(session, response, {
+          id: documentId ?? response.id,
+          createdAt: response.createdAt,
+          fileName,
+          documentType: result.documentType,
+          provider: used.providerId,
+          model: used.model,
+          trustScore: result.summary.trustScore,
+          verificationMode,
+          contentHash: requestHash,
+          totalClaims: result.summary.totalClaims,
+        });
+        response.persistence.persisted = true;
+        stages.record("replay_snapshot", "Session stored", `Full session saved to ${session.driver} storage; it can be replayed later without an AI call.`, "success");
+      } catch (error) {
+        response.persistence.reason = clientSafeError(error, "persistence").message;
+        stages.record("replay_snapshot", "Session storage", `Verification succeeded but the session could not be saved. ${response.persistence.reason}`, "warning");
+      }
+    } else {
+      response.persistence.reason = persistenceError ?? storageUnavailableReason();
+    }
+    if (persistenceError && response.persistence.persisted) response.persistence.reason = persistenceError;
+
+    return sendJson(res, 200, response);
   } catch (error) {
     return sendJson(res, statusOf(error, 422), { error: clientSafeError(error, "verification").message, timeline: stages.events });
   }

@@ -11,7 +11,7 @@
  */
 
 /** Vendor gateways. Model names are chosen within a provider — see _providers/index.ts. */
-export type ProviderId = "gemini" | "openrouter";
+export type ProviderId = "gemini" | "openrouter" | "huggingface";
 
 export type ClaimStatus = "verified" | "corrected" | "unsupported" | "needs_review";
 

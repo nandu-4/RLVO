@@ -13,11 +13,13 @@ import RouteFallback from "@/components/truthlens/RouteFallback";
 // four dashboards. This took the initial chunk from 651 kB to a fraction of it.
 import TruthLensHome from "./pages/TruthLensHome";
 
+const TruthLensLogin = lazy(() => import("./pages/TruthLensLogin"));
 const TruthLensVerify = lazy(() => import("./pages/TruthLensVerify"));
 const TruthLensReview = lazy(() => import("./pages/TruthLensReview"));
 const TruthLensDashboard = lazy(() => import("./pages/TruthLensDashboard"));
 const TruthLensBenchmark = lazy(() => import("./pages/TruthLensBenchmark"));
 const TruthLensAdmin = lazy(() => import("./pages/TruthLensAdmin"));
+const TruthLensHistory = lazy(() => import("./pages/TruthLensHistory"));
 
 // Batch verification is intentionally not routed: the page and its API remain in the tree so the
 // feature can be restored, but an unfinished surface must not be reachable.
@@ -47,11 +49,13 @@ const App = () => (
             <Routes>
               {/* TruthLens AI Enterprise Routes */}
               <Route path="/" element={<TruthLensHome />} />
+              <Route path="/login" element={<TruthLensLogin />} />
               <Route path="/verify" element={<TruthLensVerify />} />
               <Route path="/review" element={<TruthLensReview />} />
               <Route path="/dashboard" element={<TruthLensDashboard />} />
               <Route path="/benchmark" element={<TruthLensBenchmark />} />
               <Route path="/admin" element={<TruthLensAdmin />} />
+              <Route path="/history" element={<TruthLensHistory />} />
 
               {/* RLVO Lab & Proctoring research demos */}
               <Route path="/image-refinement" element={<ImageRefinement />} />

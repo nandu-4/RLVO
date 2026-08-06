@@ -17,7 +17,12 @@ interface PersistInput {
   fileName: string;
   documentType: string;
   fileSizeKb: number;
-  modelUsed: string;
+  provider: string;
+  model: string;
+  verificationMode: "cross_check" | "self_check";
+  ocrEngine?: string;
+  providerLatencyMs?: number;
+  documentProcessingTimeMs?: number;
   claims: AssembledClaim[];
   summary: { totalClaims: number; verifiedCount: number; correctedCount: number; unsupportedCount: number; needsReviewCount: number; trustScore: number; riskLevel: string };
   timeline: Array<{ step: string; title: string; detail: string; status: string; timestamp: string }>;
@@ -29,6 +34,11 @@ export interface PersistedIds {
   documentId: string;
   /** In-memory claim id (claim-1, ...) -> durable UUID. */
   claimIds: Record<string, string>;
+}
+
+/** Immutable UI payload used for a no-model replay. It is deliberately separate from normalized rows. */
+export async function persistReplay(documentId: string, identity: Identity, verificationSnapshot: unknown, providerAttempts: unknown): Promise<void> {
+  await insert("verification_replays", [{ document_id: documentId, user_id: identity.userId, verification_snapshot: verificationSnapshot, provider_attempts: providerAttempts }], "return=minimal");
 }
 
 async function insert<T = void>(table: string, rows: unknown, prefer = "return=representation"): Promise<T> {
@@ -50,7 +60,9 @@ export async function persistVerification(input: PersistInput): Promise<Persiste
     document_name: input.fileName,
     document_type: input.documentType,
     file_size_kb: input.fileSizeKb,
-    model_used: input.modelUsed,
+    provider: input.provider,
+    model: input.model,
+    verification_mode: input.verificationMode,
     trust_score: input.summary.trustScore,
     risk_level: input.summary.riskLevel,
     total_claims: input.summary.totalClaims,
@@ -65,6 +77,9 @@ export async function persistVerification(input: PersistInput): Promise<Persiste
     mean_legibility: input.quality.meanLegibility,
     indexed_blocks: input.quality.blockCount,
     page_count: input.quality.pageCount,
+    ocr_engine: input.ocrEngine ?? null,
+    provider_latency_ms: input.providerLatencyMs ?? null,
+    document_processing_time_ms: input.documentProcessingTimeMs ?? null,
   }]);
 
   // PostgREST returns bulk-insert representations in request order, so index alignment is sound.
@@ -135,7 +150,7 @@ export async function persistVerification(input: PersistInput): Promise<Persiste
       final_value: claim.verifiedValue ?? claim.originalValue,
       status: claim.status,
       trust_score: claim.trustScore,
-      reviewer_name: "Automated Engine",
+      reviewer_user_id: null,
       reviewer_notes: claim.reason,
     }))
     .filter((row) => Boolean(row.claim_id));

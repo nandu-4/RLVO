@@ -1,5 +1,7 @@
 import { activeModel, sendJson } from "./_gemini.js";
 import { persistenceConfigured, supabaseRest } from "./_identity.js";
+import { localStoreStatus } from "./_localstore.js";
+import { storageDriver } from "./_store.js";
 import { providerStatus } from "./_providers/index.js";
 
 export const maxDuration = 10;
@@ -38,6 +40,10 @@ export default async function handler(req: any, res: any) {
     }
   }
 
+  // Absent Supabase no longer means "nothing is stored" — the local driver takes over.
+  const driver = storageDriver();
+  const local = driver === "local" ? await localStoreStatus() : null;
+
   const status = !modelConfigured
     ? "unhealthy" // verification is impossible
     : database.configured && !database.reachable
@@ -52,14 +58,18 @@ export default async function handler(req: any, res: any) {
     checks: {
       verification: { ok: modelConfigured, detail: modelConfigured ? "A vision provider adapter is configured." : "No provider adapter is configured; set GEMINI_API_KEY." },
       persistence: {
-        ok: !database.configured || database.reachable,
-        mode: database.configured ? "workspace" : "demo-only",
+        ok: database.configured ? database.reachable : driver !== "none",
+        mode: database.configured ? "workspace" : driver === "local" ? "local" : "demo-only",
+        driver,
         latencyMs: database.latencyMs,
-        detail: !database.configured
-          ? "Stateless mode: results are not stored; review, analytics and audit are unavailable by design."
-          : database.reachable
-          ? "Database reachable."
-          : "Database configured but unreachable — verification still works, storage does not.",
+        detail: database.configured
+          ? database.reachable
+            ? "Database reachable."
+            : "Database configured but unreachable — verification still works, storage does not."
+          : driver === "local"
+          ? `Local session store (${local?.durability}): ${local?.detail} Review queue and audit trail still require Supabase, because they need a verified identity.`
+          : "Session storage is disabled (TRUTHLENS_LOCAL_STORE=off); results are not stored.",
+        ...(local ? { localStore: { path: local.path, sessions: local.sessions, durability: local.durability } } : {}),
       },
     },
     activeModel,

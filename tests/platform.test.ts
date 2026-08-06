@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { parseJson } from "../api/_gemini.js";
 import { rateLimit, callerKey } from "../api/_ratelimit.js";
 import { isUuid } from "../api/_identity.js";
@@ -83,5 +83,58 @@ describe("uuid validation", () => {
     // A client-supplied id is interpolated into a PostgREST filter; anything but a UUID is refused.
     expect(isUuid("1&or=(status.eq.verified)")).toBe(false);
     expect(isUuid("*")).toBe(false);
+  });
+});
+
+/**
+ * Failover must walk MODELS, not just providers.
+ *
+ * Gemini bills its free-tier daily allowance per model (quotaId
+ * `GenerateRequestsPerDayPerProjectPerModel-FreeTier`). Measured against a live key:
+ * gemini-flash-latest returned 429 while gemini-flash-lite-latest answered normally at the same
+ * moment. A one-model-per-provider chain gave up on Gemini at that first 429 and failed the whole
+ * request while a working model sat unused.
+ */
+describe("resolutionChain", () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    process.env.GEMINI_API_KEY = "test-gemini";
+    process.env.OPENROUTER_API_KEY = "test-openrouter";
+    process.env.HUGGINGFACE_API_KEY = "test-hf";
+  });
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it("offers a provider's sibling models before moving to another vendor", async () => {
+    const { resolutionChain } = await import("../api/_providers/index.js");
+    const chain = resolutionChain().map((c) => `${c.providerId}/${c.model}`);
+
+    const geminiModels = chain.filter((c) => c.startsWith("gemini/"));
+    expect(geminiModels.length).toBeGreaterThan(1);
+    expect(geminiModels.some((m) => m.includes("flash-lite"))).toBe(true);
+
+    // Every Gemini candidate must precede the first non-Gemini one.
+    const lastGemini = chain.map((c) => c.startsWith("gemini/")).lastIndexOf(true);
+    const firstOther = chain.findIndex((c) => !c.startsWith("gemini/"));
+    expect(lastGemini).toBeLessThan(firstOther);
+  });
+
+  it("never repeats a provider/model pair", async () => {
+    const { resolutionChain } = await import("../api/_providers/index.js");
+    const chain = resolutionChain().map((c) => `${c.providerId}/${c.model}`);
+    expect(new Set(chain).size).toBe(chain.length);
+  });
+
+  it("promotes an explicitly requested provider and model to the front", async () => {
+    const { resolutionChain } = await import("../api/_providers/index.js");
+    const chain = resolutionChain("gemini", "gemini-flash-lite-latest");
+    expect(`${chain[0].providerId}/${chain[0].model}`).toBe("gemini/gemini-flash-lite-latest");
+  });
+
+  it("skips providers whose key is absent", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    const { resolutionChain } = await import("../api/_providers/index.js");
+    expect(resolutionChain().some((c) => c.providerId === "openrouter")).toBe(false);
   });
 });

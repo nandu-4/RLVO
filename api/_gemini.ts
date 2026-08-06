@@ -199,10 +199,53 @@ function actionableMessage(raw: string): string | null {
   // Every provider was tried and every one failed. Naming both beats naming whichever happened
   // to be last, which reads as a single-vendor problem.
   if (/^All configured providers failed\./.test(raw)) {
-    const quota = /RESOURCE_EXHAUSTED|exceeded your current quota|free_tier_requests/i.test(raw);
-    const credits = /requires more credits|openrouter_credits|requires at least \$/i.test(raw);
-    if (quota && credits) {
-      return "Both AI providers are unavailable: the Gemini free-tier daily quota is exhausted and the OpenRouter balance is too low. Add credits at https://openrouter.ai/settings/credits, enable billing on the Gemini key, or wait for the daily reset (midnight US Pacific).";
+    /*
+     * Raw text is "All configured providers failed. <provider>/<model>: err | <provider>/<model>: err".
+     *
+     * Diagnose each provider from ITS OWN segment. Matching cause-patterns against the whole
+     * string cross-contaminates: an earlier version appended "the model may need a different
+     * model id" whenever Hugging Face appeared in the chain, so a plain out-of-credit 402 was
+     * reported as a configuration error and sent the operator to change HUGGINGFACE_MODEL —
+     * which could never have fixed it.
+     */
+    const segments = raw.replace(/^All configured providers failed\.\s*/, "").split(" | ");
+    const causeFor = (provider: RegExp): string | null => {
+      const own = segments.filter((s) => provider.test(s)).join(" ");
+      if (!own) return null;
+      if (/RESOURCE_EXHAUSTED|exceeded your current quota|free_tier_requests/i.test(own)) return "quota";
+      if (/depleted your monthly included credits|requires more credits|requires at least \$|openrouter_credits|insufficient_quota/i.test(own)) return "credits";
+      if (/Prompt tokens limit exceeded/i.test(own)) return "prompt-cap";
+      if (/model_not_supported|not supported by any provider|no longer available to new users|No endpoints found/i.test(own)) return "model";
+      if (/timed out after/i.test(own)) return "timeout";
+      return "other";
+    };
+
+    const gemini = causeFor(/^gemini\//i);
+    const openrouter = causeFor(/^openrouter\//i);
+    const hugging = causeFor(/^huggingface\//i);
+
+    const describe = (name: string, cause: string | null): string | null => {
+      switch (cause) {
+        case null: return null;
+        case "quota": return `${name}'s free-tier quota is exhausted`;
+        case "credits": return `the ${name} account is out of credit`;
+        case "prompt-cap": return `${name} rejected the request as too large for a free account`;
+        case "model": return `the ${name} model id is not available to this key`;
+        case "timeout": return `${name} timed out`;
+        default: return `${name} failed`;
+      }
+    };
+
+    const failures = [describe("Gemini", gemini), describe("OpenRouter", openrouter), describe("Hugging Face", hugging)].filter(Boolean);
+    if (failures.length >= 2) {
+      // Lead with the remedy that matches what actually went wrong, not a fixed suggestion.
+      const fixes: string[] = [];
+      if (gemini === "quota") fixes.push("Gemini's free tier resets daily at midnight US Pacific, and each model has its own daily allowance");
+      if (openrouter === "credits" || openrouter === "prompt-cap") fixes.push("OpenRouter needs credits at https://openrouter.ai/settings/credits");
+      if (hugging === "credits") fixes.push("Hugging Face needs pre-paid credits or a PRO subscription");
+      if (hugging === "model") fixes.push("the Hugging Face model id needs changing — see HUGGINGFACE_MODEL");
+      const remedy = fixes.length ? ` ${fixes.join(". ")}.` : " Check each provider's quota or balance in Admin → Models.";
+      return `Every AI provider is unavailable: ${failures.join("; ")}.${remedy}`;
     }
     return "Every configured AI provider failed for this request. Check Admin → Models to see which providers are configured, and their quota or balance.";
   }
@@ -211,6 +254,15 @@ function actionableMessage(raw: string): string | null {
   }
   if (/no longer available to new users/i.test(raw)) {
     return "The configured model is not available to this API key — Google retires older models for newly created projects. Set GEMINI_MODEL to a current model such as 'gemini-flash-latest'.";
+  }
+  if (/depleted your monthly included credits/i.test(raw)) {
+    return "The Hugging Face account has used up its monthly included inference credits. Buy pre-paid credits or subscribe to PRO at https://huggingface.co/settings/billing, or switch provider in Admin → Models. This is a billing limit, not a model-id problem — changing HUGGINGFACE_MODEL will not fix it.";
+  }
+  if (/model_not_supported|not supported by any provider|No endpoints found/i.test(raw)) {
+    return "The configured model id is not served by any inference provider enabled on this account. Pick a different model in Admin → Models, or set HUGGINGFACE_MODEL to a model your account can reach.";
+  }
+  if (/Prompt tokens limit exceeded/i.test(raw)) {
+    return "OpenRouter rejected the request because a free account caps how large a prompt may be, and document images exceed it. Add credits at https://openrouter.ai/settings/credits to lift the cap, or switch to another provider in Admin → Models.";
   }
   if (/requires more credits|requires at least \$|openrouter_credits|insufficient_quota/i.test(raw)) {
     return "The OpenRouter account balance is too low for this request. Add credits at https://openrouter.ai/settings/credits, or switch to another provider in Admin → Models. Note that PDF parsing on OpenRouter needs a paid balance; image uploads do not.";

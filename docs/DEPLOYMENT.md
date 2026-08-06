@@ -15,17 +15,31 @@ absent from the `BENCHMARK_MODELS` default.
 
 ---
 
-## 1 · Demo-only deployment (fastest path)
+## 1 · Default deployment (fastest path)
 
-Verification works for anyone, immediately. Nothing is stored; the dashboard, review queue and
-audit trail explain that they need an account.
+Verification works for anyone immediately, and **results are stored without any database setup**.
+The local driver writes each complete session to disk, which is what powers History, no-cost
+replay, and repeat detection. The dashboard, review queue and audit trail still need an account —
+they require a verified identity that a device id cannot provide.
 
 ```bash
 vercel env add GEMINI_API_KEY production      # from https://aistudio.google.com/apikey
 vercel --prod
 ```
 
-Verify: `curl https://<your-app>/api/health` → `"status": "healthy"`, persistence mode `demo-only`.
+Verify: `curl https://<your-app>/api/health` → `"status": "healthy"`, persistence mode `local`,
+and a `localStore` block reporting the path, session count and durability.
+
+**Durability warning for Vercel.** Only `/tmp` is writable on the managed runtime and it is
+per-instance and evicted freely, so `durability` reports `ephemeral` and sessions last minutes.
+Point `TRUTHLENS_DATA_DIR` at a mounted volume, or configure Supabase (section 4), for storage
+that survives. The app says which of the two is live rather than implying permanence.
+
+| Variable | Effect |
+|---|---|
+| *(none)* | Sessions stored in `./.truthlens-data`, scoped per browser |
+| `TRUTHLENS_DATA_DIR` | Write sessions somewhere durable |
+| `TRUTHLENS_LOCAL_STORE=off` | Genuinely stateless; nothing is stored |
 
 ---
 
@@ -83,7 +97,7 @@ result shows the **PaddleOCR** badge rather than **model OCR**.
 Any PostgreSQL with PostgREST in front works; Supabase is the tested path.
 
 ```bash
-# Apply ALL FIVE migrations, in filename order. The second is not optional:
+# Apply the single TruthLens v1 schema:
 # the first enables RLS on three tables while dropping their policies, which
 # locks them out entirely until the second restores access.
 supabase db push
@@ -95,7 +109,7 @@ Or manually:
 for f in supabase/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
 ```
 
-All five are idempotent — verified by applying them twice against PostgreSQL 16.
+The v1 schema is for a fresh Supabase project and is idempotent.
 
 ### 4.2 Configure the API
 
@@ -131,6 +145,8 @@ database is configured but unreachable — verification still works, storage doe
 | `VITE_SUPABASE_URL` | No | Public — enables Google sign-in in the browser |
 | `VITE_SUPABASE_ANON_KEY` | No | Public, publishable. Never the service-role key |
 | `OCR_SERVICE_URL` | No | PaddleOCR service. Absent → model-transcription fallback |
+| `TRUTHLENS_DATA_DIR` | No | Local session store path. Default `./.truthlens-data` |
+| `TRUTHLENS_LOCAL_STORE` | No | `off` disables local storage entirely |
 | `SUPABASE_SERVICE_ROLE_KEY` | No | Required alongside `SUPABASE_URL` |
 | `DEFAULT_RETENTION_DAYS` | No | Default 30. Per-account override in Admin → Account |
 | `VERIFY_RATE_LIMIT` | No | Default 10 per window |

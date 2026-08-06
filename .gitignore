@@ -37,3 +37,9 @@ rlvo.zip
 
 .vercel
 .env*
+
+# Local session store (zero-config persistence backend)
+.truthlens-data/
+
+# Vite writes these while resolving the config; never source
+vite.config.ts.timestamp-*.mjs

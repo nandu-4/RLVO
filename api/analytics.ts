@@ -16,7 +16,8 @@ interface DocumentRow {
   corrected_claims: number;
   unsupported_claims: number;
   needs_review_claims: number;
-  model_used: string;
+  provider: string;
+  model: string;
   mean_legibility: number | null;
   created_at: string;
 }
@@ -52,7 +53,7 @@ export default async function handler(req: any, res: any) {
     const [documents, claims, decisions] = await Promise.all([
       restJson<DocumentRow[]>(
         `documents?user_id=eq.${identity.userId}&created_at=gte.${since}` +
-          `&select=id,document_type,trust_score,risk_level,total_claims,verified_claims,corrected_claims,unsupported_claims,needs_review_claims,model_used,mean_legibility,created_at` +
+          `&select=id,document_type,trust_score,risk_level,total_claims,verified_claims,corrected_claims,unsupported_claims,needs_review_claims,provider,model,mean_legibility,created_at` +
           `&order=created_at.desc&limit=${MAX_ROWS}`,
       ),
       restJson<ClaimRow[]>(
@@ -116,7 +117,7 @@ export default async function handler(req: any, res: any) {
         { label: "Needs review — evidence absent or ambiguous", count: needsReview },
       ].filter((entry) => entry.count > 0),
       topDocumentTypes: rank(documents, (doc) => doc.document_type || "Unknown document", 6),
-      modelComparison: aggregateBy(documents, (doc) => doc.model_used || "unknown").map((group) => ({
+      modelComparison: aggregateBy(documents, (doc) => `${doc.provider || "unknown"}/${doc.model || "unknown"}`).map((group) => ({
         label: group.key,
         documents: group.rows.length,
         averageTrustScore: mean(group.rows.map((doc) => doc.trust_score)),

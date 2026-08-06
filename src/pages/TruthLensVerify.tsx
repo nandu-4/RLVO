@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
@@ -38,6 +39,7 @@ type Phase = "upload" | "processing" | "results";
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // PDFs are rasterised client-side, so the source may be larger
 
 export default function TruthLensVerify() {
+  const [searchParams] = useSearchParams();
   const [phase, setPhase] = useState<Phase>("upload");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -60,6 +62,15 @@ export default function TruthLensVerify() {
   /** Pages rendered from the upload. A PDF becomes images here so the pipeline sees only images. */
   const [prepared, setPrepared] = useState<PreparedDocument | null>(null);
   const [preparing, setPreparing] = useState(false);
+
+  useEffect(() => {
+    const replayId = searchParams.get("replay");
+    if (!replayId) return;
+    void invokeAi<{ result: VerificationResult }>("history", { id: replayId }).then(({ data, error }) => {
+      if (error || !data?.result) { setVerificationError(error?.message || "Replay could not be loaded."); return; }
+      setResult(data.result); setPhase("results");
+    });
+  }, [searchParams]);
 
   // Everything downstream is an image: page 1 of the prepared document drives both the thumbnail
   // and the evidence viewer, so there is no PDF branch anywhere past intake.
@@ -548,12 +559,16 @@ export default function TruthLensVerify() {
                           failover
                         </span>
                       )}
+                      {result.replayMode && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-success/15 text-success border border-success/30">Replay mode · no AI calls</span>}
                     </div>
                   </div>
                   <button onClick={reset} className="btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5">
                     <RefreshCw className="w-3.5 h-3.5" /> Verify Another Document
                   </button>
                 </div>
+                {result.attempts && result.attempts.length > 0 && (
+                  <p className="mb-5 text-[11px] text-muted-foreground">Provider attempts: {result.attempts.join(" → ")}</p>
+                )}
 
                 {/* Persistence state — determines whether human review is possible at all */}
                 {!reviewEnabled && result.persistence.reason && (

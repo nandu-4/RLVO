@@ -44,7 +44,7 @@ export default async function handler(req: any, res: any) {
     const statusFilter = ["open", "assigned", "resolved"].includes(String(req.body?.status)) ? String(req.body.status) : null;
 
     const rows = await restJson<TaskRow[]>(
-      `review_tasks?select=id,status,assigned_name,assigned_email,created_at,resolved_at,` +
+      `review_tasks?select=id,status,assigned_user_id,created_at,resolved_at,` +
         `claims!inner(id,field_name,category,original_value,verified_value,status,trust_score,reason,hallucination_risk_level,retrieval_candidates,retrieval_cited),` +
         `documents!inner(id,document_name,document_type,user_id,created_at)` +
         `&documents.user_id=eq.${identity.userId}` +
@@ -62,8 +62,8 @@ export default async function handler(req: any, res: any) {
       tasks: rows.map((row) => ({
         id: row.id,
         status: row.status,
-        assignedName: row.assigned_name,
-        assignedEmail: row.assigned_email,
+        assignedName: row.assigned_user_id === identity.userId ? identity.name : null,
+        assignedEmail: row.assigned_user_id === identity.userId ? identity.email : null,
         createdAt: row.created_at,
         resolvedAt: row.resolved_at,
         documentId: row.documents.id,
@@ -91,8 +91,7 @@ export default async function handler(req: any, res: any) {
 interface TaskRow {
   id: string;
   status: string;
-  assigned_name: string | null;
-  assigned_email: string | null;
+  assigned_user_id: string | null;
   created_at: string;
   resolved_at: string | null;
   claims: {
@@ -123,27 +122,23 @@ async function assign(req: any, res: any, identity: { userId: string; name: stri
   if (!owned[0]) throw httpError(404, "Review task not found in this workspace.");
 
   // Assignment always means "assign to me": the signed-in reviewer. There is no name to type.
-  const name = action === "assign" ? identity.name : null;
-
   const response = await supabaseRest(`review_tasks?id=eq.${taskId}&status=neq.resolved`, {
     method: "PATCH",
     headers: { Prefer: "return=representation" },
     body: JSON.stringify({
-      assigned_name: name,
       assigned_user_id: action === "assign" ? identity.userId : null,
-      assigned_email: action === "assign" ? identity.email : null,
       status: action === "assign" ? "assigned" : "open",
     }),
   });
   if (!response.ok) throw new Error(`Assignment failed: ${(await response.text()).slice(0, 200)}`);
-  const [updated] = (await response.json()) as Array<{ id: string; status: string; assigned_name: string | null }>;
+  const [updated] = (await response.json()) as Array<{ id: string; status: string; assigned_user_id: string | null }>;
   if (!updated) throw httpError(409, "This task has already been resolved.");
 
   void logActivity(identity as never, {
     route: "review-queue",
-    action: action === "assign" ? `Assigned review task to ${name}` : "Unassigned review task",
+    action: action === "assign" ? `Assigned review task to ${identity.name}` : "Unassigned review task",
     statusCode: 200,
   });
 
-  return sendJson(res, 200, { task: { id: updated.id, status: updated.status, assignedName: updated.assigned_name } });
+  return sendJson(res, 200, { task: { id: updated.id, status: updated.status, assignedName: updated.assigned_user_id === identity.userId ? identity.name : null } });
 }
