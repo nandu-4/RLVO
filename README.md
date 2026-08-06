@@ -64,7 +64,7 @@ The mode is shown before you type a claim and again on the result. It is never i
 npm install
 cp .env.example .env      # add GEMINI_API_KEY or OPENROUTER_API_KEY
 npx vercel dev            # http://localhost:3000
-npm run verify            # typecheck + lint + 99 tests + build
+npm run verify            # typecheck + lint + 126 tests + build
 ```
 
 Works immediately as a guest, with no account and no database.
@@ -285,18 +285,49 @@ distinguishable, so the UI never shows a fabricated audit of work that did not h
 · **Reference** [python/video_refinement.py](python/video_refinement.py)
 · **Endpoint** `POST /analyze-video`
 
-Vision models take images, not video. Both modes therefore reduce a clip to **evenly-spaced key
-frames** (OpenCV `cv2.VideoCapture` seeking by frame index, so sampling is uniform across the whole
-clip rather than clustered at the start) and send them as a single multi-image prompt.
+Vision models take images, not video. Both modes reduce a clip to **evenly-spaced key frames** and
+send them as a multi-image prompt.
 
-| Mode | Frames | Output |
+### Adaptive sampling
+
+The frame count follows the video's **duration**. It used to be fixed — 6 for summary, 8 for time
+capsule — which meant a five-second clip and a two-hour film were reduced to the same handful of
+frames: redundant near-identical frames for the short one, and almost everything lost between
+samples for the long one.
+
+| Duration | Summary | Time capsule |
 |---|---|---|
-| **Summary** | 6 | One 2–3 sentence description of the whole clip |
-| **Time capsule** | 8 | One caption per frame — a timeline of what changes |
+| ≤ 30 s | 4 | 6 |
+| 30 s – 1 min | 6 | 8 |
+| 1 min – 3 min | 8 | 10 |
+| > 3 min | 12 | 12 |
+
+The 12-frame ceiling is a **cost guarantee, not a quality limit**: time capsule spends one Gemini
+call *per frame*, so an uncapped rule would let one long upload drain a day's free-tier quota.
+Summary is always a single call however many frames it sends.
+
+### Where the numbers live
+
+`shared/video-sampling.json` — one file, read by [src/lib/videoSampling.ts](src/lib/videoSampling.ts)
+in the browser and [python/video_sampling.py](python/video_sampling.py) on the CLI. The counts were
+previously duplicated as literals in both, so changing one silently left the other behind. Neither
+runtime hardcodes them now.
+
+### Coverage reaches the end of the video
+
+Samples are spaced across `n − 1` intervals, so the first lands at `0` and the last at the end.
+The previous loop divided by `n` and stepped `i = 0 … n−1`, which put the final sample at `(n−1)/n`
+of the way through — **the closing sixth of every video was never looked at.** The final target is
+pulled back by 50 ms because seeking to exactly `duration` commonly decodes nothing.
+
+The browser seeks by **time** and the Python CLI selects by **frame index**, but both sample the
+same fractional positions `i/(n−1)`, so they agree frame-for-frame on constant-framerate material.
+Verified: a 300-frame clip at 6 samples yields indices `[0, 60, 120, 179, 239, 299]` — first frame
+to last.
 
 Time-capsule replies are parsed with a numbered-caption parser that tolerates the model dropping or
 merging lines; a short reply yields fewer captions rather than a crash. Same model, retry and
-backoff policy as Image RLVO.
+backoff policy as Image RLVO — unchanged.
 
 ---
 
@@ -427,13 +458,13 @@ serverless functions, set `VITE_BACKEND=python` and run `uvicorn server:app --po
 ## Verification & testing
 
 ```bash
-npm run verify        # typecheck (src + api strict) → lint → 99 tests → build
+npm run verify        # typecheck (src + api strict) → lint → 126 tests → build
 npm test              # unit + regression suites
 ```
 
 | Layer | How verified |
 |---|---|
-| Pipeline logic | **99 tests**: geometry, retrieval, signals, guardrails, media, security, storage |
+| Pipeline logic | **126 tests**: geometry, retrieval, signals, guardrails, media, security, storage, video sampling |
 | Migrations | Applied to real PostgreSQL 16 in Docker, and to a live Supabase project; idempotent |
 | Storage + replay | Live round trip — store → list → replay → delete, asserting **0 AI calls** on replay |
 | Repeat detection | Identical document + claims served from storage; `force:true` re-runs the model |

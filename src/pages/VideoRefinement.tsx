@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Video, Clock, Upload } from "lucide-react";
 import { invokeAi } from "@/integrations/aiClient";
 import Navigation from "@/components/Navigation";
+import { frameCountFor, sampleTimestamps } from "@/lib/videoSampling";
 
 interface CaptionedFrame {
   frameUrl: string;
@@ -40,31 +41,42 @@ const VideoRefinement = () => {
     }
   };
 
+  const grabCurrentFrame = (video: HTMLVideoElement): string => {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx?.drawImage(video, 0, 0);
+    return canvas.toDataURL('image/jpeg', 0.8);
+  };
+
   const extractFrameAtTime = (video: HTMLVideoElement, time: number): Promise<string> => {
     return new Promise((resolve) => {
-      video.currentTime = time;
-      video.onseeked = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(video, 0, 0);
-        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      /*
+       * `seeked` is not guaranteed to fire. Assigning currentTime the value it already holds is a
+       * no-op in most browsers — which is exactly the first sample, at t=0 — and the last sample now
+       * targets the end of the video, where a seek can also settle without a new event. The old code
+       * had no fallback, so either case would have hung the upload forever with the spinner running.
+       */
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        video.removeEventListener('seeked', finish);
+        resolve(grabCurrentFrame(video));
       };
+      const timer = setTimeout(finish, 3000);
+      video.addEventListener('seeked', finish, { once: true });
+      video.currentTime = time;
     });
   };
 
-  const extractVideoFrames = async (video: HTMLVideoElement, numFrames: number = 6): Promise<string[]> => {
-    const duration = video.duration;
-    const interval = duration / numFrames;
+  const extractVideoFrames = async (video: HTMLVideoElement, timestamps: number[]): Promise<string[]> => {
     const frames: string[] = [];
-
-    for (let i = 0; i < numFrames; i++) {
-      const time = i * interval;
-      const frame = await extractFrameAtTime(video, time);
-      frames.push(frame);
+    for (const time of timestamps) {
+      frames.push(await extractFrameAtTime(video, time));
     }
-
     return frames;
   };
 
@@ -94,7 +106,9 @@ const VideoRefinement = () => {
       });
 
       if (mode === "summary") {
-        const frames = await extractVideoFrames(video, 6);
+        // Frame count follows the video's duration — see shared/video-sampling.json.
+        const timestamps = sampleTimestamps(video.duration, frameCountFor("summary", video.duration));
+        const frames = await extractVideoFrames(video, timestamps);
 
         const { data, error } = await invokeAi<{ summary: string }>('analyze-video', {
           frames,
@@ -109,10 +123,9 @@ const VideoRefinement = () => {
           description: "Summary generated",
         });
       } else {
-        const numFrames = 8;
-        const frames = await extractVideoFrames(video, numFrames);
-        const duration = video.duration;
-        const interval = duration / numFrames;
+        const numFrames = frameCountFor("timecapsule", video.duration);
+        const timestamps = sampleTimestamps(video.duration, numFrames);
+        const frames = await extractVideoFrames(video, timestamps);
 
         const { data, error } = await invokeAi<{ captions: string[] }>('analyze-video', {
           frames,
@@ -124,7 +137,8 @@ const VideoRefinement = () => {
         const captionedFrames: CaptionedFrame[] = data.captions.map((caption: string, index: number) => ({
           frameUrl: frames[index],
           caption,
-          timestamp: index * interval
+          // The actual instant sampled, not a re-derived guess — these now reach the video's end.
+          timestamp: timestamps[index] ?? 0
         }));
 
         setTimeCapsuleFrames(captionedFrames);

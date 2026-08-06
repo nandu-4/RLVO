@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "Single source of truth for Video RLVO frame sampling.",
+    "Read by src/lib/videoSampling.ts (browser) and python/video_sampling.py (CLI).",
+    "Neither runtime may hardcode these numbers — that is the duplication this file removes.",
+    "Tiers are matched in order; the first whose maxSeconds >= duration wins, and a null",
+    "maxSeconds means unbounded, so it must be last."
+  ],
+  "tiers": {
+    "summary": [
+      { "maxSeconds": 30, "frames": 4 },
+      { "maxSeconds": 60, "frames": 6 },
+      { "maxSeconds": 180, "frames": 8 },
+      { "maxSeconds": null, "frames": 12 }
+    ],
+    "timecapsule": [
+      { "maxSeconds": 30, "frames": 6 },
+      { "maxSeconds": 60, "frames": 8 },
+      { "maxSeconds": 180, "frames": 10 },
+      { "maxSeconds": null, "frames": 12 }
+    ]
+  },
+  "_endEpsilonComment": [
+    "The final sample targets the end of the video. Seeking to exactly `duration` frequently",
+    "yields no decodable frame — the last frame is presented slightly before the reported",
+    "duration — so the final target is pulled back by this many seconds. 0.05s is under two",
+    "frames at 25fps, so it still lands on the closing moment."
+  ],
+  "endEpsilonSeconds": 0.05
+}

@@ -27,8 +27,10 @@ import requests
 MODEL = "gemini-2.5-flash-lite"
 API_BASE = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 
-SUMMARY_FRAMES = 6
-TIMECAPSULE_FRAMES = 8
+# Frame counts are no longer fixed here. They come from shared/video-sampling.json via
+# video_sampling.frame_count_for(), which the browser reads too — the literals 6 and 8 used to
+# live in both places and drift independently.
+from video_sampling import frame_count_for, frame_indices_for
 
 
 def _api_key() -> str:
@@ -105,10 +107,10 @@ def extract_frames(video_path: str, n_frames: int) -> list:
     if total <= 0:
         raise RuntimeError("Video reports zero frames")
 
+    # Indices span the whole video, first frame to last. The previous `i * (total // n_frames)`
+    # stepping stopped short of the end, so the closing portion was never sampled.
     frames = []
-    step = max(1, total // n_frames)
-    for i in range(n_frames):
-        idx = min(i * step, total - 1)
+    for idx in frame_indices_for(total, n_frames):
         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ok, frame = cap.read()
         if not ok:
@@ -192,7 +194,16 @@ def run_pipeline(video_path: str, mode: str) -> None:
     if mode not in ("summary", "timecapsule"):
         raise ValueError('mode must be "summary" or "timecapsule"')
 
-    n = SUMMARY_FRAMES if mode == "summary" else TIMECAPSULE_FRAMES
+    # Duration drives the count. CAP_PROP_FRAME_COUNT / FPS is the reliable way to get it
+    # without decoding the file twice.
+    import cv2
+    probe = cv2.VideoCapture(video_path)
+    fps = probe.get(cv2.CAP_PROP_FPS) or 0
+    total = int(probe.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    probe.release()
+    duration = (total / fps) if fps > 0 and total > 0 else 0.0
+    n = frame_count_for(mode, duration)
+    print(f"   Duration {duration:.1f}s -> {n} frame(s) for {mode} mode")
     print(f"[1/2] Extracting {n} frames from: {video_path}")
     frames = extract_frames(video_path, n)
     print(f"   Extracted {len(frames)} frames\n")
